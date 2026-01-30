@@ -8,6 +8,10 @@ const nextConfig = {
   },
   images: {
     unoptimized: true,
+    domains: [
+      "technology-backend-5hxg.onrender.com", // domain API backend của bạn
+      "res.cloudinary.com", // nếu bạn dùng Cloudinary
+    ],
   },
 }
 

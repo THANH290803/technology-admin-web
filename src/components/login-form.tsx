@@ -28,7 +28,7 @@ export function LoginForm({ onLogin, onBack }: LoginFormProps) {
     setMessage("")
 
     try {
-      const response = await axios.post("https://technology-backend-5hxg.onrender.com/api/auth/login", { email, password })
+      const response = await axios.post("http://localhost:8080/api/auth/login", { email, password })
 
       // ✅ Lưu thông tin vào localStorage
       localStorage.setItem("user", JSON.stringify(response.data.user))
