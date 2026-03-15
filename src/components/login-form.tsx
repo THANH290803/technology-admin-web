@@ -1,14 +1,13 @@
 "use client"
 
 import type React from "react"
-
 import { useState } from "react"
 import axios from "axios"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { ShoppingBag, Eye, EyeOff, ArrowLeft } from "lucide-react"
+import { ShoppingBag, Eye, EyeOff } from "lucide-react"
 
 interface LoginFormProps {
   onLogin: () => void
@@ -17,7 +16,7 @@ interface LoginFormProps {
 
 export function LoginForm({ onLogin, onBack }: LoginFormProps) {
   const [showPassword, setShowPassword] = useState(false)
-  const [email, setEmail] = useState("")
+  const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [message, setMessage] = useState("")
@@ -28,16 +27,24 @@ export function LoginForm({ onLogin, onBack }: LoginFormProps) {
     setMessage("")
 
     try {
-      const response = await axios.post("http://localhost:8080/api/auth/login", { email, password })
+      const response = await axios.post("http://localhost:8080/api/auth/login", {
+        username,
+        password,
+      })
 
-      // ✅ Lưu thông tin vào localStorage
-      localStorage.setItem("user", JSON.stringify(response.data.user))
-      localStorage.setItem("token", response.data.token)
+      // lấy token từ result
+      const token = response.data.result.token
+      const refreshToken = response.data.result.refreshToken
 
-      setMessage("Đăng nhập thành công!")
+      // lưu token
+      localStorage.setItem("token", token)
+      localStorage.setItem("refreshToken", refreshToken)
+
+      setMessage(response.data.message)
+
       onLogin()
     } catch (error: any) {
-      setMessage(error.response?.data?.message || "Sai email hoặc mật khẩu!")
+      setMessage(error.response?.data?.message || "Sai username hoặc mật khẩu!")
     } finally {
       setIsSubmitting(false)
     }
@@ -46,12 +53,6 @@ export function LoginForm({ onLogin, onBack }: LoginFormProps) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-blue-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-        <div className="mb-4">
-          {/* <Button variant="ghost" onClick={onBack} className="text-gray-600 hover:text-gray-900">
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Quay lại
-          </Button> */}
-        </div>
 
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-orange-500 to-red-500 rounded-2xl mb-4">
@@ -64,29 +65,32 @@ export function LoginForm({ onLogin, onBack }: LoginFormProps) {
         <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm">
           <CardHeader className="text-center pb-4">
             <CardTitle className="text-2xl font-bold text-gray-900">Đăng nhập</CardTitle>
-            <CardDescription className="text-gray-600">Truy cập vào bảng điều khiển quản trị</CardDescription>
+            <CardDescription className="text-gray-600">
+              Truy cập vào bảng điều khiển quản trị
+            </CardDescription>
           </CardHeader>
+
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-6">
+
+              {/* USERNAME */}
               <div className="space-y-2">
-                <Label htmlFor="email" className="text-sm font-medium text-gray-700">
-                  Email
-                </Label>
+                <Label htmlFor="username">Username</Label>
                 <Input
-                  id="email"
-                  type="email"
-                  placeholder="Nhập email đã đăng ký từ trước"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  id="username"
+                  type="text"
+                  placeholder="Nhập username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
                   className="h-12 border-gray-200 focus:border-orange-500 focus:ring-orange-500"
                   required
                 />
               </div>
 
+              {/* PASSWORD */}
               <div className="space-y-2">
-                <Label htmlFor="password" className="text-sm font-medium text-gray-700">
-                  Mật khẩu
-                </Label>
+                <Label htmlFor="password">Mật khẩu</Label>
+
                 <div className="relative">
                   <Input
                     id="password"
@@ -97,6 +101,7 @@ export function LoginForm({ onLogin, onBack }: LoginFormProps) {
                     className="h-12 pr-12 border-gray-200 focus:border-orange-500 focus:ring-orange-500"
                     required
                   />
+
                   <Button
                     type="button"
                     variant="ghost"
@@ -114,26 +119,25 @@ export function LoginForm({ onLogin, onBack }: LoginFormProps) {
               </div>
 
               {message && (
-                <p className="text-center text-sm text-red-600 mt-2">{message}</p>
+                <p className="text-center text-sm text-red-600">{message}</p>
               )}
 
               <Button
                 type="submit"
                 disabled={isSubmitting}
-                className="w-full h-12 bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white font-medium rounded-lg shadow-lg hover:shadow-xl transition-all duration-200"
+                className="w-full h-12 bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white font-medium rounded-lg"
               >
                 {isSubmitting ? "Đang đăng nhập..." : "Đăng nhập"}
               </Button>
-            </form>
 
-            <div className="mt-6 text-center">
-              <p className="text-sm text-gray-500">Demo: Nhập bất kỳ email và mật khẩu nào để truy cập</p>
-            </div>
+            </form>
           </CardContent>
         </Card>
 
         <div className="mt-8 text-center">
-          <p className="text-sm text-gray-500">© 2024 SalesAdmin Pro. Hệ thống quản lý bán hàng toàn diện.</p>
+          <p className="text-sm text-gray-500">
+            © 2024 SalesAdmin Pro
+          </p>
         </div>
       </div>
     </div>

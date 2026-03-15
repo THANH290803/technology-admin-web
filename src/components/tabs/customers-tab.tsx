@@ -28,13 +28,16 @@ export function CustomersTab({
   const [searchQuery, setSearchQuery] = useState("")
   const [customers, setCustomers] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
+  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null
 
   useEffect(() => {
     const fetchCustomers = async () => {
       try {
         setLoading(true)
-        const res = await axios.get("http://localhost:8080/api/users/statistics")
-        setCustomers(res.data)
+        const res = await axios.get("http://localhost:8080/api/accounts/statistics", {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        setCustomers(res.data.result || [])
       } catch (err) {
         console.error("Lỗi load customers", err)
       } finally {
@@ -48,9 +51,9 @@ export function CustomersTab({
 
   const filteredCustomers = customers.filter(
     (customer) =>
-      customer.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      customer.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      customer.phoneNumber.includes(searchQuery)
+      customer.username?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      customer.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (customer.phoneNumber || "").includes(searchQuery)
   )
 
 
@@ -97,7 +100,7 @@ export function CustomersTab({
             </TableHeader>
             <TableBody>
               {paginatedCustomers.map((customer) => (
-                <TableRow key={customer.id} className="border-b border-gray-100 hover:bg-gray-50">
+                <TableRow key={customer.userId} className="border-b border-gray-100 hover:bg-gray-50">
                   <TableCell className="font-medium text-gray-900 py-4">{customer.username}</TableCell>
                   <TableCell className="text-gray-600 py-4">{customer.email}</TableCell>
                   <TableCell className="text-gray-600 py-4">{customer.phoneNumber}</TableCell>

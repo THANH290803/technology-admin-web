@@ -92,7 +92,7 @@ export function ProductsTab({
       const res = await axios.get("http://localhost:8080/api/products", {
         headers: { Authorization: `Bearer ${token}` },
       })
-      const data = res.data.data || res.data
+      const data = res.data?.result || []
       let list = Array.isArray(data) ? data : []
 
       // Sắp xếp id giảm dần
@@ -114,7 +114,7 @@ export function ProductsTab({
       const res = await axios.get(`http://localhost:8080/api/images/product/${productId}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
-      const data = res.data.data || res.data
+      const data = res.data?.result || []
       // data might be an array or single object
       let mainImage: any = null
       if (Array.isArray(data)) {
@@ -199,7 +199,7 @@ export function ProductsTab({
       const res = await axios.get("http://localhost:8080/api/brands", {
         headers: { Authorization: `Bearer ${token}` },
       })
-      const data = res.data.data || res.data
+      const data = res.data?.result || []
       setBrands(Array.isArray(data) ? data : [])
     } catch (error) {
       console.error("❌ Lỗi khi tải thương hiệu:", error)
@@ -213,7 +213,7 @@ export function ProductsTab({
       const res = await axios.get("http://localhost:8080/api/categories", {
         headers: { Authorization: `Bearer ${token}` },
       })
-      const data = res.data.data || res.data
+      const data = res.data?.result || []
       setCategories(Array.isArray(data) ? data : [])
     } catch (error) {
       console.error("❌ Lỗi khi tải danh mục:", error)
@@ -241,8 +241,10 @@ export function ProductsTab({
         const res = await axios.get("http://localhost:8080/api/configurations", {
           headers: { Authorization: `Bearer ${token}` },
         })
-        const data = Array.isArray(res.data) ? res.data : []
-        setConfigurations(data)
+
+        const data = res.data?.result || []
+
+        setConfigurations(Array.isArray(data) ? data : [])
 
         // 👉 Mặc định chọn cấu hình đầu tiên nếu chưa có
         if (data.length > 0 && selectedConfigs.length === 0) {
@@ -342,7 +344,7 @@ export function ProductsTab({
 
       // Tạo sản phẩm
       const response = await axios.post(
-        "http://localhost:8080/api/products/create-product-productDetails",
+        "http://localhost:8080/api/products",
         payload,
         {
           headers:
@@ -353,7 +355,8 @@ export function ProductsTab({
         }
       )
 
-      const newProductId = response.data.id || 0
+      const newProductId = response.data?.result
+      console.log(newProductId);
 
       // Upload ảnh nếu có
       if (selectedFiles.length > 0) {
@@ -395,15 +398,15 @@ export function ProductsTab({
 
     const fetchProductDetails = async () => {
       try {
+
         const res = await axios.get(
           `http://localhost:8080/api/product-details/product/${selectedItem.id}`,
           { headers: { Authorization: `Bearer ${token}` } }
         );
 
-        const details = Array.isArray(res.data) ? res.data : [res.data];
-        if (!details || details.length === 0) return;
+        const details = res.data?.result || [];
+        if (details.length === 0) return;
 
-        // lấy product từ firstDetail
         const product = details[0].product;
 
         setName(product?.name ?? "");
@@ -411,24 +414,14 @@ export function ProductsTab({
         setCategoryId(product?.category?.id ?? null);
         setDescription(product?.description ?? "");
 
-        // load ảnh
-        const images = product?.images || [];
-        setUploadedImages(images.map(img => img.imageUrl ?? "/placeholder.svg"));
-
-        // load all configurations
-        const configsRes = await axios.get(
-          `http://localhost:8080/api/configurations`,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        setConfigurations(Array.isArray(configsRes.data) ? configsRes.data : []);
-
-        // set selectedConfigs, giá, số lượng từ productDetails
+        // load configurations
         const selectedIds: number[] = [];
         const prices: Record<number, number> = {};
         const quantities: Record<number, number> = {};
 
-        details.forEach(detail => {
+        details.forEach((detail: any) => {
           const configId = detail.configuration?.id;
+
           if (configId) {
             selectedIds.push(configId);
             prices[configId] = detail.price ?? 0;
@@ -440,13 +433,26 @@ export function ProductsTab({
         setConfigPrices(prices);
         setConfigQuantities(quantities);
 
+        // load images
+        const imgRes = await axios.get(
+          `http://localhost:8080/api/images/product/${selectedItem.id}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+
+        const imgData = imgRes.data?.result || [];
+
+        setUploadedImages(
+          imgData.map((img: any) => img.imageUrl || "/placeholder.svg")
+        );
+
       } catch (err) {
         console.error("❌ Lỗi load chi tiết sản phẩm:", err);
       }
     };
 
     fetchProductDetails();
-  }, [selectedItem, token]);
+
+  }, [selectedItem]);
 
   // ---------------- SUBMIT PATCH ----------------
   const handleUpdateProduct = async () => {
@@ -466,8 +472,8 @@ export function ProductsTab({
       };
 
       // Patch product
-      await axios.patch(
-        `http://localhost:8080/api/products/updateProductWithProductDetail/${selectedItem.id}`,
+      await axios.put(
+        `http://localhost:8080/api/products/${selectedItem.id}`,
         payload,
         { headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } }
       );
@@ -643,21 +649,6 @@ export function ProductsTab({
                         onClick={() => {
                           setSelectedItem(product)
                           setIsEditModalOpen(true)
-                          setUploadedImages(product.images || [])
-                          const configs = mockData.product_details
-                            .filter((pd) => pd.product_id === product.id)
-                            .map((pd) => pd.config_id)
-                          setSelectedConfigs(configs)
-                          const quantities: Record<number, number> = {}
-                          configs.forEach((configId) => {
-                            quantities[configId] = 1
-                          })
-                          setConfigQuantities(quantities)
-                          const prices: Record<number, number> = {}
-                          configs.forEach((configId) => {
-                            prices[configId] = mockData.configurations.find((c) => c.id === configId)?.price || 0
-                          })
-                          setConfigPrices(prices)
                         }}
                       >
                         <Edit className="h-4 w-4" />

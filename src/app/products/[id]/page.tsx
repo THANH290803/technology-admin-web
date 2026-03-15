@@ -17,25 +17,58 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
   const [selectedConfigId, setSelectedConfigId] = useState<number | null>(null)
   const [selectedSpecs, setSelectedSpecs] = useState<any[]>([])
   const [selectedQuantity, setSelectedQuantity] = useState<number>(0)
+  const [images, setImages] = useState<any[]>([])
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         const token = localStorage.getItem("token")
-        const res = await fetch(`http://localhost:8080/api/product-details/product/${productId}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-        if (!res.ok) throw new Error("Lỗi khi tải dữ liệu")
-        const data = await res.json()
-        setProductData(data)
 
-        if (data.length > 0) setProduct(data[0].product)
+        // API product details
+        const res = await fetch(
+          `http://localhost:8080/api/product-details/product/${productId}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        )
+
+        if (!res.ok) throw new Error("Lỗi khi tải dữ liệu")
+
+        const data = await res.json()
+        setProductData(data.result || [])
+
+        if (data.result && data.result.length > 0) {
+          setProduct(data.result[0].product)
+        }
+
+        // API images
+        const imgRes = await fetch(
+          `http://localhost:8080/api/images/product/${productId}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        )
+
+        const imgData = await imgRes.json()
+
+        setImages(imgData.result || [])
+
       } catch (error) {
         console.error("❌ Lỗi khi gọi API:", error)
       }
     }
+
     fetchData()
   }, [productId])
+
+  useEffect(() => {
+    if (product) {
+      setProduct({
+        ...product,
+        images: images
+      })
+    }
+  }, [images])
 
   // if (!product) {
   //   return (
@@ -118,7 +151,7 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
                   </div>
                   <div>
                     <p className="text-sm text-gray-600 font-medium mb-2">Ngày tạo</p>
-                    <p className="text-lg font-semibold text-gray-900">{product?.created_at}</p>
+                    <p className="text-lg font-semibold text-gray-900">{`${new Date(product?.createdDate).toLocaleDateString("vi-VN")} ${new Date(product?.createdDate).toLocaleTimeString("vi-VN")}`}</p>
                   </div>
                 </div>
 
@@ -136,7 +169,11 @@ export default function ProductDetailsPage({ params }: { params: Promise<{ id: s
                   <div className="rounded-lg p-6 flex items-center justify-center min-h-64">
                     {product?.images?.length > 0 ? (
                       <Image
-                        src={product.images.find((img: any) => img.isMain)?.imageUrl || "/placeholder.svg"}
+                        src={
+                          product.images.find((img: any) => img.isMain)?.imageUrl ||
+                          product.images[0]?.imageUrl ||
+                          "/placeholder.svg"
+                        }
                         alt={product?.name}
                         width={1000}
                         height={100}

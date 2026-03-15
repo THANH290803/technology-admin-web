@@ -47,15 +47,16 @@ export function OrdersTab() {
         },
       })
 
-      let ordersData = Array.isArray(res.data) ? res.data : res.data || []
+      const ordersData = res.data?.result || []
 
       // Sắp xếp
-      ordersData.sort((a, b) => {
-        // 1️⃣ theo trạng thái: 1 → 5
+      ordersData.sort((a: any, b: any) => {
+        // 1️⃣ theo trạng thái
         if (a.status !== b.status) {
           return a.status - b.status
         }
-        // 2️⃣ trong cùng trạng thái, theo ngày cũ → mới
+
+        // 2️⃣ cùng trạng thái → theo ngày
         return new Date(a.createdDate).getTime() - new Date(b.createdDate).getTime()
       })
 
@@ -146,8 +147,8 @@ export function OrdersTab() {
   const filteredOrders = orders.filter((order) => {
     const matchesSearch =
       order.id?.toString().includes(searchQuery) ||
-      order.customerName?.toLowerCase().includes(searchQuery.toLowerCase())
-    order.orderCode?.toLowerCase().includes(searchQuery.toLowerCase())
+      order.customerName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      order.orderCode?.toLowerCase().includes(searchQuery.toLowerCase())
 
     const matchesStatus = statusFilter === "all" || order.status?.toString() === statusFilter
 

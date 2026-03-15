@@ -243,22 +243,28 @@ function ImagesTab({
     const fetchImages = async () => {
       try {
         const token = localStorage.getItem("token")
+
         const res = await axios.get("http://localhost:8080/api/images", {
           headers: { Authorization: `Bearer ${token}` },
         })
-        setImages(res.data)
-        console.log(res.data);
+
+        setImages(res.data?.result || [])   // ⭐ SỬA Ở ĐÂY
+        console.log(res.data)
+
       } catch (error) {
         console.error("❌ Lỗi khi tải danh sách ảnh:", error)
       }
     }
+
     fetchImages()
   }, [])
 
-  const filteredImages = images.filter((img) =>
-    img.id.toString().includes(searchQuery) ||
-    (img.isMain && "main".includes(searchQuery.toLowerCase()))
-  )
+  const filteredImages = Array.isArray(images)
+    ? images.filter((img) =>
+      img.id.toString().includes(searchQuery) ||
+      (img.isMain && "main".includes(searchQuery.toLowerCase()))
+    )
+    : []
 
 
   const totalPages = Math.ceil(filteredImages.length / rowsPerPage)
@@ -340,7 +346,7 @@ function ImagesTab({
                       className="w-16 h-16 rounded-lg object-cover"
                     />
                   </TableCell>
-                  <TableCell className="font-medium text-gray-900">{img.product?.name || "N/A"}</TableCell>
+                  <TableCell className="font-medium text-gray-900">{img.productName || "N/A"}</TableCell>
                   <TableCell>
                     {img.isMain ? (
                       <Badge className="bg-orange-100 text-orange-800">
@@ -527,7 +533,7 @@ function AdminsTab({
   const fetchAdmins = async () => {
     try {
       const token = localStorage.getItem("token")
-      const response = await axios.get("http://localhost:8080/api/users", {
+      const response = await axios.get("http://localhost:8080/api/accounts", {
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
@@ -535,7 +541,7 @@ function AdminsTab({
         },
       })
 
-      const users = (response.data.data || response.data) as any[]
+      const users = (response.data?.result || []) as any[]
       const filtered = users.filter(
         (user: any) => user.role?.id === 1 || user.role?.id === 3
       )
@@ -932,9 +938,9 @@ function CategoriesTab({
           Accept: "application/json",
         },
       })
-      const data = response.data.data || response.data
 
-      // 🔹 Sắp xếp theo id giảm dần
+      const data = response.data.result || []
+
       const sortedCategories = data.sort((a: any, b: any) => b.id - a.id)
 
       setCategories(sortedCategories)
@@ -960,13 +966,13 @@ function CategoriesTab({
     try {
       if (isAddModalOpen) {
         await axios.post(
-          "http://localhost:8080/api/categories/create",
+          "http://localhost:8080/api/categories",
           { name },
           { headers: { Authorization: `Bearer ${token}` } }
         )
       } else if (isEditModalOpen && selectedItem) {
         await axios.patch(
-          `http://localhost:8080/api/categories/update/${selectedItem.id}`,
+          `http://localhost:8080/api/categories/${selectedItem.id}`,
           { name },
           { headers: { Authorization: `Bearer ${token}` } }
         )
@@ -983,7 +989,7 @@ function CategoriesTab({
   // 🔹 Hàm xóa danh mục
   const handleDelete = async (id: number) => {
     try {
-      await axios.delete(`http://localhost:8080/api/categories/delete/${id}`, {
+      await axios.delete(`http://localhost:8080/api/categories/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
       setCategories(categories.filter((cat) => cat.id !== id))
@@ -1145,43 +1151,59 @@ function BrandsTab({
   searchQuery,
   setSearchQuery,
 }: any) {
+
   const [brands, setBrands] = useState<any[]>([])
   const [currentPage, setCurrentPage] = useState(1)
   const [rowsPerPage, setRowsPerPage] = useState(10)
+  const [totalPages, setTotalPages] = useState(1)
+  const [totalItems, setTotalItems] = useState(0)
 
-  // 🔸 Lấy token từ localStorage
-  // const token = typeof window !== "undefined" ? localStorage.getItem("token") : null
+  const token =
+    typeof window !== "undefined" ? localStorage.getItem("token") : null
 
-  // 🔹 Hàm lấy dữ liệu thương hiệu từ API
+
   const fetchBrands = async () => {
     if (!token) return
     try {
-      const response = await axios.get("http://localhost:8080/api/brands", {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      const data = response.data.data || response.data
+      const params: any = {
+        page: currentPage,
+        size: rowsPerPage
+      }
 
-      // 🔹 Sắp xếp theo id giảm dần
-      const sortedBrands = data.sort((a: any, b: any) => b.id - a.id)
+      if (searchQuery) {
+        params.searchKey = searchQuery
+      }
 
-      setBrands(sortedBrands)
-    } catch (err) {
-      console.error("Error fetching brands:", err)
+      const response = await axios.get(
+        "http://localhost:8080/api/brands",
+        {
+          params,
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      )
+
+      const data = response.data
+
+      setBrands(data.result || [])
+      setTotalPages(data.meta?.totalPages || 1)
+      setTotalItems(data.meta?.totalElements || 0)
+
+    } catch (error) {
+      console.error("Error fetching brands:", error)
     }
   }
 
-  // 🔹 Gọi khi component mount
+
   useEffect(() => {
-    fetchBrands()
-  }, [token])
+    if (token) {
+      fetchBrands()
+    }
+  }, [searchQuery, currentPage, rowsPerPage, token])
 
-  const filteredBrands = brands.filter((brand) => brand.name.toLowerCase().includes(searchQuery.toLowerCase()))
 
-  const totalPages = Math.ceil(filteredBrands.length / rowsPerPage)
-  const startIndex = (currentPage - 1) * rowsPerPage
-  const paginatedBrands = filteredBrands.slice(startIndex, startIndex + rowsPerPage)
-
-  // 🔹 Hàm thêm hoặc cập nhật thương hiệu
+  // thêm / update
   const handleSave = async (name: string) => {
     try {
       if (isAddModalOpen) {
@@ -1189,40 +1211,56 @@ function BrandsTab({
           "http://localhost:8080/api/brands",
           { name },
           {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        )
-      } else if (isEditModalOpen && selectedItem) {
-        await axios.patch(
-          `http://localhost:8080/api/brands/${selectedItem.id}`,
-          { name },
-          {
-            headers: { Authorization: `Bearer ${token}` },
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
           }
         )
       }
-      await fetchBrands() // ✅ gọi lại để cập nhật danh sách
 
-      // 🔹 Đóng modal và reset
+      if (isEditModalOpen && selectedItem) {
+        await axios.put(
+          `http://localhost:8080/api/brands/${selectedItem.id}`,
+          { name },
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        )
+
+      }
+
+      fetchBrands()
       setIsAddModalOpen(false)
       setIsEditModalOpen(false)
       setSelectedItem(null)
-    } catch (err) {
-      console.error("Error saving brand:", err)
+    } catch (error) {
+      console.error("Error saving brand:", error)
     }
   }
 
-  // 🔹 Hàm xoá thương hiệu
+
+  // delete
   const handleDelete = async (id: number) => {
     try {
-      await axios.delete(`http://localhost:8080/api/brands/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      setBrands(brands.filter((brand) => brand.id !== id))
-    } catch (err) {
-      console.error("Error deleting brand:", err)
+
+      await axios.delete(
+        `http://localhost:8080/api/brands/${id}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      )
+
+      fetchBrands()
+    } catch (error) {
+      console.error("Error deleting brand:", error)
     }
+
   }
+
 
   return (
     <div className="space-y-4">
@@ -1233,19 +1271,24 @@ function BrandsTab({
             placeholder="Tìm kiếm thương hiệu..."
             className="pl-8 border-gray-200"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value)
+              setCurrentPage(1)
+            }}
           />
         </div>
+
         <Button
           onClick={() => setIsAddModalOpen(true)}
-          className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white"
+          className="bg-gradient-to-r from-orange-500 to-red-500 text-white"
         >
           <Plus className="h-4 w-4 mr-2" />
           Thêm thương hiệu
         </Button>
       </div>
 
-      <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
+
+      <Card className="shadow-lg border-0 bg-white/80">
         <CardContent className="pt-6">
           <Table>
             <TableHeader>
@@ -1255,12 +1298,16 @@ function BrandsTab({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {paginatedBrands.length > 0 ? (
-                paginatedBrands.map((brand) => (
+
+              {brands.length > 0 ? (
+                brands.map((brand) => (
                   <TableRow key={brand.id}>
-                    <TableCell className="font-medium text-gray-900">{brand.name}</TableCell>
+                    <TableCell className="font-medium text-gray-900">
+                      {brand.name}
+                    </TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-2">
+                      <div className="flex gap-2">
+
                         <Button
                           variant="ghost"
                           size="sm"
@@ -1268,13 +1315,19 @@ function BrandsTab({
                             setSelectedItem(brand)
                             setIsEditModalOpen(true)
                           }}
-                          className="hover:bg-orange-50 text-orange-600"
+                          className="text-orange-600"
                         >
                           <Edit className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="sm" className="hover:bg-red-50 text-red-600" onClick={() => handleDelete(brand.id)}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDelete(brand.id)}
+                          className="text-red-600"
+                        >
                           <Trash2 className="h-4 w-4" />
                         </Button>
+
                       </div>
                     </TableCell>
                   </TableRow>
@@ -1286,6 +1339,7 @@ function BrandsTab({
                   </TableCell>
                 </TableRow>
               )}
+
             </TableBody>
           </Table>
           <Pagination
@@ -1293,48 +1347,60 @@ function BrandsTab({
             totalPages={totalPages}
             onPageChange={setCurrentPage}
             rowsPerPage={rowsPerPage}
-            onRowsPerPageChange={setRowsPerPage}
-            totalItems={filteredBrands.length}
+            onRowsPerPageChange={(size) => {
+              setRowsPerPage(size)
+              setCurrentPage(1)
+            }}
+            totalItems={totalItems}
           />
         </CardContent>
       </Card>
 
-      {/* Add/Edit Brand Modal */}
+
+      {/* Modal Add / Edit */}
       <Dialog
         open={isAddModalOpen || isEditModalOpen}
         onOpenChange={(open) => {
+
           if (!open) {
             setIsAddModalOpen(false)
             setIsEditModalOpen(false)
             setSelectedItem(null)
           }
+
         }}
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              {isAddModalOpen ? (
-                <Plus className="h-5 w-5 text-green-500" />
-              ) : (
-                <Edit className="h-5 w-5 text-orange-500" />
-              )}
-              {isAddModalOpen ? "Thêm thương hiệu mới" : "Chỉnh sửa thương hiệu"}
+            <DialogTitle>
+              {isAddModalOpen
+                ? "Thêm thương hiệu mới"
+                : "Chỉnh sửa thương hiệu"}
             </DialogTitle>
           </DialogHeader>
+
           <div className="grid gap-4 py-4">
             <div>
-              <Label htmlFor="brand-name">Tên thương hiệu</Label>
+              <Label>Tên thương hiệu</Label>
               <Input
-                id="brand-name"
                 placeholder="Nhập tên thương hiệu"
                 defaultValue={selectedItem?.name || ""}
-                onChange={(e) => setSelectedItem((prev: any) => ({ ...prev, name: e.target.value }))}
-                className="border-gray-200"
+                onChange={(e) =>
+                  setSelectedItem((prev: any) => ({
+                    ...prev,
+                    name: e.target.value,
+                  }))
+                }
               />
             </div>
           </div>
+
           <DialogFooter>
-            <Button className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600" onClick={() => handleSave(selectedItem?.name || "")}>
+
+            <Button
+              className="bg-gradient-to-r from-orange-500 to-red-500"
+              onClick={() => handleSave(selectedItem?.name || "")}
+            >
               {isAddModalOpen ? "Thêm thương hiệu" : "Cập nhật"}
             </Button>
           </DialogFooter>
@@ -1375,9 +1441,8 @@ function ConfigurationsTab({
         }
       )
 
-      const data = response.data.data || response.data
+      const data = response.data.result || []
 
-      // 🔹 Sắp xếp theo id giảm dần
       const sortedConfigs = data.sort((a: any, b: any) => b.id - a.id)
 
       setConfigurations(sortedConfigs)
@@ -1391,11 +1456,19 @@ function ConfigurationsTab({
     if (!token) return
     try {
       const response = await axios.get(
-        `http://localhost:8080/api/specifications/${configId}?includeDeleted=false`,
+        `http://localhost:8080/api/specifications/configuration/${configId}?includeDeleted=false`,
         { headers: { Authorization: `Bearer ${token}` } }
       )
-      const specs = response.data.data?.specifications || response.data.specifications || []
-      setNewSpecs(specs.map((s: any) => ({ id: s.id, name: s.name, value: s.value })))
+
+      const specs = response.data.result || []
+
+      setNewSpecs(
+        specs.map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          value: s.value,
+        }))
+      )
     } catch (err) {
       console.error("Error fetching specs:", err)
       setNewSpecs([])
@@ -1436,7 +1509,7 @@ function ConfigurationsTab({
         { headers: { Authorization: `Bearer ${token}` } }
       )
 
-      const configId = res.data?.data?.id || res.data?.id
+      const configId = res.data?.result?.id || res.data?.id
       if (!configId) throw new Error("Không lấy được ID cấu hình mới")
 
       // 2️⃣ Thêm thông số kỹ thuật
@@ -1680,7 +1753,13 @@ function ConfigurationsTab({
                 <Input
                   id="config-name"
                   placeholder="Nhập tên cấu hình"
-                  defaultValue={selectedItem?.name || ""}
+                  value={selectedItem?.name || ""}
+                  onChange={(e) =>
+                    setSelectedItem({
+                      ...selectedItem,
+                      name: e.target.value,
+                    })
+                  }
                   className="border-gray-200"
                 />
               </div>
