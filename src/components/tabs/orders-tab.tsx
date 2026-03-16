@@ -73,54 +73,76 @@ export function OrdersTab() {
   }, [])
 
   // ---------- Helpers ----------
-  const statusText = (status: number) => {
+  const statusText = (status: string) => {
     switch (status) {
-      case 1: return "Chờ xử lý"
-      case 2: return "Đã xác nhận"
-      case 3: return "Đang giao hàng"
-      case 4: return "Hoàn thành"
-      case 5: return "Đã huỷ"
-      default: return "Không xác định"
+      case "PENDING":
+        return "Chờ xử lý"
+      case "PROCESSING":
+        return "Đã xác nhận"
+      case "SHIPPING":
+        return "Đang giao hàng"
+      case "COMPLETED":
+        return "Hoàn thành"
+      case "CANCELED":
+        return "Đã huỷ"
+      default:
+        return "Không xác định"
     }
   }
 
-  const getStatusColor = (status: number | string) => {
-    const s = typeof status === "string" ? Number(status) : status
-    switch (s) {
-      case 1: return "bg-amber-50 text-amber-700 border-amber-200"
-      case 2: return "bg-blue-50 text-blue-700 border-blue-200"
-      case 3: return "bg-indigo-50 text-indigo-700 border-indigo-200"
-      case 4: return "bg-emerald-50 text-emerald-700 border-emerald-200"
-      case 5: return "bg-red-50 text-red-700 border-red-200"
-      default: return "bg-gray-50 text-gray-700 border-gray-200"
-    }
+  const statusNumberMap: Record<string, string> = {
+    PENDING: "1",
+    PROCESSING: "2",
+    SHIPPING: "3",
+    COMPLETED: "4",
+    CANCELED: "5",
   }
 
-  const isStatusDisabled = (currentStatus: number, targetStatus: number) => {
-    switch (currentStatus) {
-      // Chờ xử lý
-      case 1:
-        return [3, 4].includes(targetStatus)
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "PENDING":
+        return "bg-amber-50 text-amber-700 border-amber-200"
 
-      // Đã xác nhận
-      case 2:
-        return [4, 5].includes(targetStatus)
+      case "PROCESSING":
+        return "bg-blue-50 text-blue-700 border-blue-200"
 
-      // Đang giao hàng
-      case 3:
-        return [1, 2, 5].includes(targetStatus)
+      case "SHIPPING":
+        return "bg-indigo-50 text-indigo-700 border-indigo-200"
 
-      // Hoàn thành → disable tất cả còn lại
-      case 4:
-        return targetStatus !== 4
+      case "COMPLETED":
+        return "bg-emerald-50 text-emerald-700 border-emerald-200"
 
-      // Đã huỷ → disable tất cả còn lại
-      case 5:
-        return targetStatus !== 5
+      case "CANCELED":
+        return "bg-red-50 text-red-700 border-red-200"
 
       default:
-        return false
+        return "bg-gray-50 text-gray-700 border-gray-200"
     }
+  }
+
+  const isStatusDisabled = (currentStatus: string, targetStatus: string) => {
+
+    if (currentStatus === "PENDING") {
+      return ["SHIPPING", "COMPLETED"].includes(targetStatus)
+    }
+
+    if (currentStatus === "PROCESSING") {
+      return ["COMPLETED", "CANCELED"].includes(targetStatus)
+    }
+
+    if (currentStatus === "SHIPPING") {
+      return ["PENDING", "PROCESSING", "CANCELED"].includes(targetStatus)
+    }
+
+    if (currentStatus === "COMPLETED") {
+      return targetStatus !== "COMPLETED"
+    }
+
+    if (currentStatus === "CANCELED") {
+      return targetStatus !== "CANCELED"
+    }
+
+    return false
   }
 
   const formatCurrency = (value: number | null | undefined) => {
@@ -150,7 +172,8 @@ export function OrdersTab() {
       order.customerName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       order.orderCode?.toLowerCase().includes(searchQuery.toLowerCase())
 
-    const matchesStatus = statusFilter === "all" || order.status?.toString() === statusFilter
+    const matchesStatus =
+      statusFilter === "all" || order.status === statusFilter
 
     return matchesSearch && matchesStatus
   })
@@ -237,9 +260,9 @@ export function OrdersTab() {
 
 
   // ---------- Status editing ----------
-  const handleStatusClick = (orderId: number, currentStatus: number) => {
+  const handleStatusClick = (orderId: number, currentStatus: string) => {
     setEditingStatusId(orderId)
-    setTempStatus(currentStatus?.toString() ?? "")
+    setTempStatus(statusNumberMap[currentStatus]) // convert enum -> number string
   }
 
   const handleStatusCancel = () => {
@@ -248,24 +271,22 @@ export function OrdersTab() {
   }
 
   const handleStatusUpdate = async (orderId: number) => {
-    if (!tempStatus) return alert("Vui lòng chọn trạng thái mới")
-    const newStatus = Number(tempStatus)
+    const statusNumber = Number(tempStatus)
+    const token = localStorage.getItem("token")
+
     try {
-      await axios.patch(`http://localhost:8080/api/orders/update-status-order/${orderId}`,
-        { status: newStatus },
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      )
-      await fetchOrders()
-      setEditingStatusId(null)
-      setTempStatus("")
-      alert(`Cập nhật trạng thái đơn hàng #${orderId} thành công`)
-    } catch (err) {
-      console.error("Update status error:", err)
-      alert("Cập nhật trạng thái thất bại")
+      await fetch(`http://localhost:8080/api/orders/${orderId}/status`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          status: statusNumber
+        }),
+      })
+    } catch (error) {
+      console.error("Cập nhật trạng thái thất bại", error)
     }
   }
 
@@ -289,12 +310,29 @@ export function OrdersTab() {
               <SelectValue placeholder="Lọc theo trạng thái" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Tất cả trạng thái</SelectItem>
-              <SelectItem value="1">Chờ xử lý</SelectItem>
-              <SelectItem value="2">Đã xác nhận</SelectItem>
-              <SelectItem value="3">Đang giao hàng</SelectItem>
-              <SelectItem value="4">Hoàn thành</SelectItem>
-              <SelectItem value="5">Đã huỷ</SelectItem>
+              <SelectItem value="all">
+                Tất cả trạng thái
+              </SelectItem>
+
+              <SelectItem value="PENDING">
+                Chờ xử lý
+              </SelectItem>
+
+              <SelectItem value="PROCESSING">
+                Đã xác nhận
+              </SelectItem>
+
+              <SelectItem value="SHIPPING">
+                Đang giao hàng
+              </SelectItem>
+
+              <SelectItem value="COMPLETED">
+                Hoàn thành
+              </SelectItem>
+
+              <SelectItem value="CANCELED">
+                Đã huỷ
+              </SelectItem>
             </SelectContent>
           </Select>
 
@@ -362,35 +400,35 @@ export function OrdersTab() {
                             <SelectContent>
                               <SelectItem
                                 value="1"
-                                disabled={isStatusDisabled(order.status, 1)}
+                                disabled={isStatusDisabled(order.status, "PENDING")}
                               >
                                 Chờ xử lý
                               </SelectItem>
 
                               <SelectItem
                                 value="2"
-                                disabled={isStatusDisabled(order.status, 2)}
+                                disabled={isStatusDisabled(order.status, "PROCESSING")}
                               >
                                 Đã xác nhận
                               </SelectItem>
 
                               <SelectItem
                                 value="3"
-                                disabled={isStatusDisabled(order.status, 3)}
+                                disabled={isStatusDisabled(order.status, "SHIPPING")}
                               >
                                 Đang giao hàng
                               </SelectItem>
 
                               <SelectItem
                                 value="4"
-                                disabled={isStatusDisabled(order.status, 4)}
+                                disabled={isStatusDisabled(order.status, "COMPLETED")}
                               >
                                 Hoàn thành
                               </SelectItem>
 
                               <SelectItem
                                 value="5"
-                                disabled={isStatusDisabled(order.status, 5)}
+                                disabled={isStatusDisabled(order.status, "CANCELED")}
                               >
                                 Đã huỷ
                               </SelectItem>
