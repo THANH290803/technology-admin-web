@@ -1,19 +1,44 @@
-"use client"
+"use client";
 
-import { useState, useRef } from "react"
-import { useEffect } from "react"
-import { useSearchParams, useNavigate } from "react-router-dom"
-import axios from "axios"
-import Image from "next/image"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Badge } from "@/components/ui/badge"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { useState, useRef, useEffect } from "react";
+import { useSearchParams, useNavigate } from "react-router-dom";
+import axios from "axios";
+import Image from "next/image";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   ChevronLeft,
   ChevronRight,
@@ -36,7 +61,15 @@ import {
   Wrench,
   X,
   Star,
-} from "lucide-react"
+  Bot,
+  BarChart3,
+  Loader2,
+  AlertTriangle,
+  TrendingUp,
+  PackageCheck,
+  LineChart as LineChartIcon,
+  User,
+} from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -46,23 +79,33 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
-import { ProductsTab } from "@/components/tabs/products-tab"
-import { OrdersTab } from "@/components/tabs/orders-tab"
-import { CustomersTab } from "@/components/tabs/customers-tab"
-// import { ConfigurationsTab } from "@/components/tabs/configurations-tab"
-import { mockData } from "@/lib/mock-data"
-import { toast } from "sonner"
+} from "@/components/ui/alert-dialog";
+import { ProductsTab } from "@/components/tabs/products-tab";
+import { OrdersTab } from "@/components/tabs/orders-tab";
+import { CustomersTab } from "@/components/tabs/customers-tab";
+import { mockData } from "@/lib/mock-data";
+import { toast } from "sonner";
+import { AnalyticsTab } from "@/components/tabs/analytics-tab";
 
-const token = typeof window !== "undefined" ? localStorage.getItem("token") : null
+const token =
+  typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
-
-function Pagination({ currentPage, totalPages, onPageChange, rowsPerPage, onRowsPerPageChange, totalItems }: any) {
+function Pagination({
+  currentPage,
+  totalPages,
+  onPageChange,
+  rowsPerPage,
+  onRowsPerPageChange,
+  totalItems,
+}: any) {
   return (
     <div className="flex items-center justify-between px-2 py-4 border-t bg-white rounded-b-lg">
       <div className="flex items-center gap-2">
         <span className="text-sm text-gray-600">Hiển thị</span>
-        <Select value={rowsPerPage.toString()} onValueChange={(value) => onRowsPerPageChange(Number(value))}>
+        <Select
+          value={rowsPerPage.toString()}
+          onValueChange={(value) => onRowsPerPageChange(Number(value))}
+        >
           <SelectTrigger className="w-20 h-8">
             <SelectValue />
           </SelectTrigger>
@@ -101,129 +144,322 @@ function Pagination({ currentPage, totalPages, onPageChange, rowsPerPage, onRows
         </div>
       </div>
     </div>
-  )
+  );
 }
 
+interface ProductResponse {
+  id: number;
+  productCode: string;
+  name: string;
+  totalQuantity: number;
+  brand?: { name: string };
+  category?: { name: string };
+  images?: { imageUrl: string }[];
+}
+
+interface OrderEntity {
+  id: number;
+  orderCode: string;
+  status: string;
+  customerName?: string;
+  account?: { username: string; email: string };
+  totalPrice: number;
+}
+
+// ==========================================
+// CÁC TAB CHỨC NĂNG
+// ==========================================
+
 function OverviewTab() {
-  const totalRevenue = mockData.orders.reduce((sum, order) => sum + (order.total || 0), 0)
-  const totalOrders = mockData.orders.length
-  const totalCustomers = mockData.customers.length
-  const totalProducts = mockData.products.length
+  const [stats, setStats] = useState({
+    totalRevenue: 0,
+    totalOrders: 0,
+    totalCustomers: 0,
+    totalProducts: 0,
+  });
+  const [recentOrders, setRecentOrders] = useState<OrderEntity[]>([]);
+  const [topProducts, setTopProducts] = useState<ProductResponse[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchOverviewData = async () => {
+      const token = localStorage.getItem("token");
+      if (!token) return;
+
+      const headers = { Authorization: `Bearer ${token}` };
+
+      try {
+        // 1. LẤY THỐNG KÊ KHÁCH HÀNG
+        const customersRes = await axios.get(
+          "http://localhost:8080/api/accounts/statistics",
+          { headers },
+        );
+        const customersCount = customersRes.data?.result || 0;
+
+        // 2. LẤY DANH SÁCH ORDER
+        const ordersRes = await axios.get("http://localhost:8080/api/orders", {
+          headers,
+        });
+        // OrderController trả về dạng List (thường bọc trong response.data.result)
+        const ordersData: OrderEntity[] =
+          ordersRes.data?.result?.content || ordersRes.data?.result || [];
+
+        // 🛑 FIX LOGIC: CHỈ TÍNH DOANH THU CÁC ĐƠN ĐÃ HOÀN THÀNH (DELIVERED)
+        let revenue = 0;
+        let completedOrdersCount = 0; // Thích thì đếm riêng đơn thành công luôn
+
+        ordersData.forEach((order) => {
+          // Check đúng tên Enum của ông, ví dụ: DELIVERED, COMPLETED, v.v.
+          if (order.status === "DELIVERED") {
+            revenue += order.totalPrice || 0;
+            completedOrdersCount++;
+          }
+        });
+
+        // Lọc 5 đơn hàng mới nhất (Sort theo ID giảm dần)
+        const sortedOrders = [...ordersData]
+          .sort((a, b) => b.id - a.id)
+          .slice(0, 5);
+
+        // 3. LẤY DANH SÁCH PRODUCT (CÓ PHÂN TRANG)
+        const productsRes = await axios.get(
+          "http://localhost:8080/api/products?size=5&sort=id,desc",
+          { headers },
+        );
+        // ProductController phân trang nên data nằm trong result.content
+        const productsData: ProductResponse[] =
+          productsRes.data?.result?.content || productsRes.data?.result || [];
+        const totalProds =
+          productsRes.data?.meta?.totalElements || productsData.length || 0;
+
+        // 4. CẬP NHẬT STATE ĐỂ RENDER
+        setStats({
+          totalRevenue: revenue,
+          totalOrders: ordersData.length, // Vẫn hiển thị tổng đơn được tạo
+          totalCustomers:
+            typeof customersCount === "number"
+              ? customersCount
+              : customersCount.total || 0,
+          totalProducts: totalProds,
+        });
+        setRecentOrders(sortedOrders);
+        setTopProducts(productsData);
+      } catch (error) {
+        console.error("❌ Lỗi khi tải dữ liệu Overview:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchOverviewData();
+  }, []);
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 space-y-4">
+        <Loader2 className="w-10 h-10 animate-spin text-orange-500" />
+        <p className="text-gray-500">
+          Đang đồng bộ dữ liệu hệ thống từ Server...
+        </p>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-in fade-in duration-500">
+      {/* 4 THẺ THỐNG KÊ TỔNG QUAN */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
+        <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm hover:-translate-y-1 transition-transform">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-gray-600 flex items-center justify-between">
               <span>Tổng doanh thu</span>
-              <DollarSign className="h-4 w-4 text-green-500" />
+              <div className="w-8 h-8 rounded-full bg-green-50 flex items-center justify-center">
+                <DollarSign className="h-4 w-4 text-green-500" />
+              </div>
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-gray-900">₫{totalRevenue.toLocaleString()}</div>
-            <p className="text-xs text-gray-500 mt-1">Từ tất cả đơn hàng</p>
+            <div className="text-2xl font-bold text-gray-900">
+              ₫{stats.totalRevenue.toLocaleString()}
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              Từ tất cả đơn hàng hệ thống
+            </p>
           </CardContent>
         </Card>
 
-        <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
+        <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm hover:-translate-y-1 transition-transform">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-gray-600 flex items-center justify-between">
               <span>Đơn hàng</span>
-              <ShoppingCart className="h-4 w-4 text-blue-500" />
+              <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center">
+                <ShoppingCart className="h-4 w-4 text-blue-500" />
+              </div>
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-gray-900">{totalOrders}</div>
-            <p className="text-xs text-gray-500 mt-1">Tổng số đơn hàng</p>
+            <div className="text-2xl font-bold text-gray-900">
+              {stats.totalOrders}
+            </div>
+            <p className="text-xs text-gray-500 mt-1">Tổng số hóa đơn đã tạo</p>
           </CardContent>
         </Card>
 
-        <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
+        <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm hover:-translate-y-1 transition-transform">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-gray-600 flex items-center justify-between">
               <span>Khách hàng</span>
-              <Users className="h-4 w-4 text-purple-500" />
+              <div className="w-8 h-8 rounded-full bg-purple-50 flex items-center justify-center">
+                <Users className="h-4 w-4 text-purple-500" />
+              </div>
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-gray-900">{totalCustomers}</div>
-            <p className="text-xs text-gray-500 mt-1">Khách hàng đã đăng ký</p>
+            <div className="text-2xl font-bold text-gray-900">
+              {stats.totalCustomers}
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              Tài khoản có Role Khách hàng
+            </p>
           </CardContent>
         </Card>
 
-        <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
+        <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm hover:-translate-y-1 transition-transform">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-gray-600 flex items-center justify-between">
               <span>Sản phẩm</span>
-              <Package className="h-4 w-4 text-orange-500" />
+              <div className="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center">
+                <Package className="h-4 w-4 text-orange-500" />
+              </div>
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-gray-900">{totalProducts}</div>
-            <p className="text-xs text-gray-500 mt-1">Tổng sản phẩm</p>
+            <div className="text-2xl font-bold text-gray-900">
+              {stats.totalProducts}
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              Mã sản phẩm trong Database
+            </p>
           </CardContent>
         </Card>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* ĐƠN HÀNG GẦN ĐÂY */}
         <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
           <CardHeader>
-            <CardTitle>Đơn hàng gần đây</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <ShoppingCart className="w-5 h-5 text-indigo-500" /> Đơn hàng gần
+              đây
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {mockData.orders.slice(0, 5).map((order) => (
-                <div key={order.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div>
-                    <p className="font-medium text-gray-900">Đơn hàng #{order.id}</p>
-                    <p className="text-sm text-gray-600">{order.customer_name}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-bold text-gray-900">₫{order.total?.toLocaleString() || "0"}</p>
-                    <Badge className="mt-1 bg-blue-100 text-blue-800">{order.status_text}</Badge>
-                  </div>
+              {recentOrders.length > 0 ? (
+                recentOrders.map((order) => {
+                  // Gọi thẳng vào các field từ Order Entity
+                  const customerName =
+                    order.customerName ||
+                    order.account?.username ||
+                    "Khách vãng lai";
+                  const orderCode = order.orderCode || `ORD-${order.id}`;
+                  const total = order.totalPrice || 0;
+                  const status = order.status || "PENDING";
+
+                  return (
+                    <div
+                      key={order.id}
+                      className="flex items-center justify-between p-3 bg-gray-50/50 hover:bg-gray-100 transition-colors rounded-lg border border-gray-100"
+                    >
+                      <div>
+                        <p className="font-bold text-gray-900">
+                          Mã ĐH: {orderCode}
+                        </p>
+                        <p className="text-sm text-gray-500 flex items-center gap-1">
+                          <User className="w-3 h-3" /> {customerName}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-bold text-orange-600">
+                          ₫{total.toLocaleString()}
+                        </p>
+                        <Badge className="mt-1 bg-blue-100 text-blue-800 hover:bg-blue-200 border-none">
+                          {status}
+                        </Badge>
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="text-center py-6 text-gray-400">
+                  Chưa có đơn hàng nào
                 </div>
-              ))}
+              )}
             </div>
           </CardContent>
         </Card>
 
+        {/* SẢN PHẨM MỚI CẬP NHẬT */}
         <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
           <CardHeader>
-            <CardTitle>Sản phẩm bán chạy</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <Package className="w-5 h-5 text-orange-500" /> Sản phẩm mới cập
+              nhật
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {mockData.products.slice(0, 5).map((product) => (
-                <div key={product.id} className="flex items-center gap-4 p-3 bg-gray-50 rounded-lg">
-                  <Image
-                    src={product.img || "/placeholder.svg"}
-                    alt={product.name}
-                    width={100}
-                    height={100}
-                    className="w-12 h-12 rounded-lg object-cover"
-                  />
-                  <div className="flex-1">
-                    <p className="font-medium text-gray-900">{product.name}</p>
-                    <p className="text-sm text-gray-600">{product.category}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-bold text-gray-900">{product.amount}</p>
-                    <p className="text-xs text-gray-600">Còn lại</p>
-                  </div>
+              {topProducts.length > 0 ? (
+                topProducts.map((product) => {
+                  // Gọi thẳng vào ProductResponse DTO
+                  const imgUrl =
+                    product.images?.[0]?.imageUrl || "/placeholder.svg";
+                  const catName = product.category?.name || "Chưa phân loại";
+                  const qty = product.totalQuantity || 0;
+
+                  return (
+                    <div
+                      key={product.id}
+                      className="flex items-center gap-4 p-3 bg-gray-50/50 hover:bg-gray-100 transition-colors rounded-lg border border-gray-100"
+                    >
+                      <Image
+                        src={imgUrl}
+                        alt={product.name}
+                        width={100}
+                        height={100}
+                        className="w-14 h-14 rounded-lg object-cover bg-white border border-gray-200"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p
+                          className="font-bold text-gray-900 truncate"
+                          title={product.name}
+                        >
+                          {product.name}
+                        </p>
+                        <p className="text-sm text-gray-500">{catName}</p>
+                      </div>
+                      <div className="text-right">
+                        <p
+                          className={`font-bold px-2 py-1 rounded-md text-sm ${qty > 0 ? "text-green-600 bg-green-50" : "text-red-600 bg-red-50"}`}
+                        >
+                          Kho: {qty}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="text-center py-6 text-gray-400">
+                  Chưa có sản phẩm nào
                 </div>
-              ))}
+              )}
             </div>
           </CardContent>
         </Card>
       </div>
     </div>
-  )
+  );
 }
-
-// Removed ProductsTab function as it was redeclared
-// Removed CustomersTab function as it was redeclared
 
 function ImagesTab({
   selectedItem,
@@ -233,51 +469,46 @@ function ImagesTab({
   isEditModalOpen,
   setIsEditModalOpen,
 }: any) {
-  const [images, setImages] = useState<any[]>([])
-  const [currentPage, setCurrentPage] = useState(1)
-  const [rowsPerPage, setRowsPerPage] = useState(10)
-  const [searchQuery, setSearchQuery] = useState("")
+  const [images, setImages] = useState<any[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [searchQuery, setSearchQuery] = useState("");
 
-  // Lấy dữ liệu từ API
   useEffect(() => {
     const fetchImages = async () => {
       try {
-        const token = localStorage.getItem("token")
+        const token = localStorage.getItem("token");
 
         const res = await axios.get("http://localhost:8080/api/images", {
           headers: { Authorization: `Bearer ${token}` },
-        })
+        });
 
-        setImages(res.data?.result || [])   // ⭐ SỬA Ở ĐÂY
-        console.log(res.data)
-
+        setImages(res.data?.result || []);
       } catch (error) {
-        console.error("❌ Lỗi khi tải danh sách ảnh:", error)
+        console.error("❌ Lỗi khi tải danh sách ảnh:", error);
       }
-    }
+    };
 
-    fetchImages()
-  }, [])
+    fetchImages();
+  }, []);
 
   const filteredImages = Array.isArray(images)
-    ? images.filter((img) =>
-      img.id.toString().includes(searchQuery) ||
-      (img.isMain && "main".includes(searchQuery.toLowerCase()))
-    )
-    : []
+    ? images.filter(
+        (img) =>
+          img.id.toString().includes(searchQuery) ||
+          (img.isMain && "main".includes(searchQuery.toLowerCase())),
+      )
+    : [];
 
+  const totalPages = Math.ceil(filteredImages.length / rowsPerPage);
+  const startIndex = (currentPage - 1) * rowsPerPage;
+  const paginatedImages = filteredImages.slice(
+    startIndex,
+    startIndex + rowsPerPage,
+  );
 
-  const totalPages = Math.ceil(filteredImages.length / rowsPerPage)
-  const startIndex = (currentPage - 1) * rowsPerPage
-  const paginatedImages = filteredImages.slice(startIndex, startIndex + rowsPerPage)
-
-  const handleEdit = (image: any) => {
-    setSelectedItem(image)
-    setIsEditModalOpen(true)
-  }
-
-  const [deleteId, setDeleteId] = useState<number | null>(null)
-  const [isConfirmOpen, setIsConfirmOpen] = useState(false)
+  const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
 
   const confirmDelete = async () => {
     if (!deleteId) return;
@@ -291,13 +522,12 @@ function ImagesTab({
 
       setImages((prev) => prev.filter((img) => img.id !== deleteId));
 
-      setIsConfirmOpen(false); // đóng popup
+      setIsConfirmOpen(false);
       setDeleteId(null);
     } catch (error) {
       console.error("❌ Lỗi xoá ảnh:", error);
     }
   };
-
 
   return (
     <div className="space-y-6">
@@ -329,7 +559,6 @@ function ImagesTab({
               <TableRow>
                 <TableHead>Hình ảnh</TableHead>
                 <TableHead>Sản phẩm</TableHead>
-                {/* <TableHead>Thứ tự</TableHead> */}
                 <TableHead>Ảnh chính</TableHead>
                 <TableHead>Thao tác</TableHead>
               </TableRow>
@@ -346,7 +575,9 @@ function ImagesTab({
                       className="w-16 h-16 rounded-lg object-cover"
                     />
                   </TableCell>
-                  <TableCell className="font-medium text-gray-900">{img.productName || "N/A"}</TableCell>
+                  <TableCell className="font-medium text-gray-900">
+                    {img.productName || "N/A"}
+                  </TableCell>
                   <TableCell>
                     {img.isMain ? (
                       <Badge className="bg-orange-100 text-orange-800">
@@ -359,15 +590,10 @@ function ImagesTab({
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      {/* <Button
+                      <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleEdit(img)}
-                        className="hover:bg-orange-50 text-orange-600"
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button> */}
-                      <Button variant="ghost" size="sm" className="hover:bg-red-50 text-red-600"
+                        className="hover:bg-red-50 text-red-600"
                         onClick={() => {
                           setDeleteId(img.id);
                           setIsConfirmOpen(true);
@@ -392,75 +618,15 @@ function ImagesTab({
         </CardContent>
       </Card>
 
-      {/* Edit Image Modal */}
-      {/* <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Edit className="h-5 w-5 text-orange-500" />
-              Chỉnh sửa hình ảnh
-            </DialogTitle>
-          </DialogHeader>
-          {selectedItem && (
-            <div className="space-y-4 py-4">
-              <div>
-                <Image
-                  src={selectedItem.image_url || "/placeholder.svg"}
-                  alt="Product"
-                  width={100}
-                  height={100}
-                  className="w-full h-48 rounded-lg object-cover"
-                />
-              </div>
-              <div>
-                <Label htmlFor="product">Sản phẩm</Label>
-                <Select defaultValue={selectedItem.product_id?.toString()}>
-                  <SelectTrigger className="border-gray-200">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {mockData.products.map((product) => (
-                      <SelectItem key={product.id} value={product.id.toString()}>
-                        {product.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="order">Thứ tự hiển thị</Label>
-                <Input id="order" type="number" defaultValue={selectedItem.order} className="border-gray-200" />
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="is_main"
-                  defaultChecked={selectedItem.is_main}
-                  className="rounded border-gray-300"
-                />
-                <Label htmlFor="is_main" className="cursor-pointer">
-                  Đặt làm ảnh chính
-                </Label>
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button
-              type="submit"
-              className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white"
-            >
-              Cập nhật
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog> */}
-
       <Dialog open={isConfirmOpen} onOpenChange={setIsConfirmOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle className="text-red-600">Xác nhận xoá hình ảnh</DialogTitle>
+            <DialogTitle className="text-red-600">
+              Xác nhận xoá hình ảnh
+            </DialogTitle>
             <DialogDescription>
-              Bạn có chắc chắn muốn xoá hình ảnh này? Thao tác này không thể hoàn tác.
+              Bạn có chắc chắn muốn xoá hình ảnh này? Thao tác này không thể
+              hoàn tác.
             </DialogDescription>
           </DialogHeader>
 
@@ -479,7 +645,7 @@ function ImagesTab({
         </DialogContent>
       </Dialog>
     </div>
-  )
+  );
 }
 
 function AdminsTab({
@@ -492,88 +658,86 @@ function AdminsTab({
   isAddModalOpen,
   setIsAddModalOpen,
 }: any) {
-  const [roles, setRoles] = useState<any[]>([])
-  // const [selectedRole, setSelectedRole] = useState<string>(selectedItem?.role || "")
+  const [roles, setRoles] = useState<any[]>([]);
 
-  // 🔹 Lấy danh sách vai trò khi mở modal
   useEffect(() => {
     if (isAddModalOpen || isEditModalOpen) {
-      fetchRoles()
+      fetchRoles();
     }
-  }, [isAddModalOpen, isEditModalOpen])
+  }, [isAddModalOpen, isEditModalOpen]);
 
   const fetchRoles = async () => {
     try {
-      const token = localStorage.getItem("token") // 👈 token lưu khi login
+      const token = localStorage.getItem("token");
       const response = await axios.get("http://localhost:8080/api/roles", {
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
-          Accept: "application/json"
-        }
-      })
-      const roleList = (response.data.data || response.data) as any[]
-      const filteredRoles = roleList.filter((role) => role.id !== 2)
-      setRoles(filteredRoles)
+          Accept: "application/json",
+        },
+      });
+
+      const roleList = (response.data?.result || []) as any[];
+      const filteredRoles = roleList.filter((role) => role.id !== 3);
+      setRoles(filteredRoles);
     } catch (error) {
-      console.error("Lỗi khi tải danh sách vai trò:", error)
+      console.error("Lỗi khi tải danh sách vai trò:", error);
     }
-  }
+  };
 
-  const [currentPage, setCurrentPage] = useState(1)
-  const [rowsPerPage, setRowsPerPage] = useState(10)
-  const [searchQuery, setSearchQuery] = useState("")
-  const [admins, setAdmins] = useState<any[]>([])
+  const [currentPage, setCurrentPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [admins, setAdmins] = useState<any[]>([]);
 
-  // 🔹 Fetch users (admin + nhân viên)
   useEffect(() => {
-    fetchAdmins()
-  }, [])
+    fetchAdmins();
+  }, []);
 
   const fetchAdmins = async () => {
     try {
-      const token = localStorage.getItem("token")
+      const token = localStorage.getItem("token");
       const response = await axios.get("http://localhost:8080/api/accounts", {
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
           Accept: "application/json",
         },
-      })
+      });
 
-      const users = (response.data?.result || []) as any[]
+      const users = (response.data?.result || []) as any[];
       const filtered = users.filter(
-        (user: any) => user.role?.id === 1 || user.role?.id === 3
-      )
-      setAdmins(filtered)
+        (user: any) => user.role?.id === 1 || user.role?.id === 2,
+      );
+      setAdmins(filtered);
     } catch (error) {
-      console.error("Lỗi khi tải danh sách người dùng:", error)
+      console.error("Lỗi khi tải danh sách người dùng:", error);
     }
-  }
-
+  };
 
   const filteredAdmins = admins.filter(
     (admin) =>
       admin.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       admin.mail?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      admin.role?.name?.toLowerCase().includes(searchQuery.toLowerCase())
-  )
+      admin.role?.name?.toLowerCase().includes(searchQuery.toLowerCase()),
+  );
 
-  const totalPages = Math.ceil(filteredAdmins.length / rowsPerPage)
-  const startIndex = (currentPage - 1) * rowsPerPage
-  const paginatedAdmins = filteredAdmins.slice(startIndex, startIndex + rowsPerPage)
+  const totalPages = Math.ceil(filteredAdmins.length / rowsPerPage);
+  const startIndex = (currentPage - 1) * rowsPerPage;
+  const paginatedAdmins = filteredAdmins.slice(
+    startIndex,
+    startIndex + rowsPerPage,
+  );
 
   const handleView = (admin: any) => {
-    setSelectedItem(admin)
-    setIsViewModalOpen(true)
-  }
+    setSelectedItem(admin);
+    setIsViewModalOpen(true);
+  };
 
   const handleEdit = (admin: any) => {
-    setSelectedItem(admin)
-    setIsEditModalOpen(true)
-  }
-
-  // const [confirmDelete, setConfirmDelete] = useState<any>(null)
+    setSelectedItem(admin);
+    setIsEditModalOpen(true);
+  };
 
   const handleSave = async (event: any) => {
     event.preventDefault();
@@ -585,20 +749,20 @@ function AdminsTab({
       phoneNumber: form.phone.value,
       address: form.address.value,
       roleId: Number(selectedItem?.role?.id || form.role.value),
-      ...(isAddModalOpen && { password: form.password?.value }), // chỉ thêm khi tạo mới
+      ...(isAddModalOpen && { password: form.password?.value }),
     };
 
     try {
       if (isAddModalOpen) {
-        await axios.post("http://localhost:8080/api/users", formData, {
+        await axios.post("http://localhost:8080/api/accounts", formData, {
           headers: { Authorization: `Bearer ${token}` },
         });
         toast.success("Thêm nhân viên thành công 🎉");
       } else if (isEditModalOpen) {
         await axios.patch(
-          `http://localhost:8080/api/users/${selectedItem.id}`,
+          `http://localhost:8080/api/accounts/${selectedItem.id}`,
           formData,
-          { headers: { Authorization: `Bearer ${token}` } }
+          { headers: { Authorization: `Bearer ${token}` } },
         );
         toast.success("Cập nhật nhân viên thành công ✅");
       }
@@ -613,24 +777,23 @@ function AdminsTab({
   };
 
   const handleDeleteAdmin = async (id: number) => {
-    if (!confirm("Bạn có chắc chắn muốn xoá nhân viên này?")) return
+    if (!confirm("Bạn có chắc chắn muốn xoá nhân viên này?")) return;
     try {
-      const token = localStorage.getItem("token")
-      await axios.delete(`http://localhost:8080/api/users/${id}`, {
+      const token = localStorage.getItem("token");
+      await axios.delete(`http://localhost:8080/api/accounts/${id}`, {
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
           Accept: "application/json",
         },
-      })
-      toast.success("Xoá nhân viên thành công!")
-      fetchAdmins()
+      });
+      toast.success("Xoá nhân viên thành công!");
+      fetchAdmins();
     } catch (error) {
-      console.error("Lỗi khi xoá nhân viên:", error)
-      toast.error("Không thể xoá nhân viên. Vui lòng thử lại!")
+      console.error("Lỗi khi xoá nhân viên:", error);
+      toast.error("Không thể xoá nhân viên. Vui lòng thử lại!");
     }
-  }
-
+  };
 
   return (
     <div className="space-y-6">
@@ -677,22 +840,22 @@ function AdminsTab({
             <TableBody>
               {paginatedAdmins.map((admin) => (
                 <TableRow key={admin.id}>
-                  <TableCell className="font-medium text-gray-900">{admin.username}</TableCell>
+                  <TableCell className="font-medium text-gray-900">
+                    {admin.username}
+                  </TableCell>
                   <TableCell className="text-gray-600">{admin.email}</TableCell>
-                  <TableCell className="text-gray-600">{admin.phoneNumber}</TableCell>
+                  <TableCell className="text-gray-600">
+                    {admin.phoneNumber}
+                  </TableCell>
                   <TableCell>
                     <Badge
                       className={
-                        admin.role?.name?.toLowerCase() === "admin" ||
-                          admin.role?.name?.toLowerCase() === "quản trị viên"
+                        admin.role?.roleCode === "ROLE_ADMIN"
                           ? "bg-purple-100 text-purple-800"
                           : "bg-blue-100 text-blue-800"
                       }
                     >
-                      {admin.role?.name?.toLowerCase() === "admin" ||
-                        admin.role?.name?.toLowerCase() === "quản trị viên"
-                        ? "Quản trị viên"
-                        : "Nhân viên"}
+                      {admin.role?.name || "N/A"}
                     </Badge>
                   </TableCell>
                   <TableCell>
@@ -713,7 +876,12 @@ function AdminsTab({
                       >
                         <Edit className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="sm" className="hover:bg-red-50 text-red-600" onClick={() => handleDeleteAdmin(admin.id)}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="hover:bg-red-50 text-red-600"
+                        onClick={() => handleDeleteAdmin(admin.id)}
+                      >
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
@@ -733,7 +901,6 @@ function AdminsTab({
         </CardContent>
       </Card>
 
-      {/* View Admin Modal */}
       <Dialog open={isViewModalOpen} onOpenChange={setIsViewModalOpen}>
         <DialogContent className="max-w-4xl">
           <DialogHeader>
@@ -754,23 +921,25 @@ function AdminsTab({
                   <p className="text-gray-900 mt-1">{selectedItem.email}</p>
                 </div>
                 <div>
-                  <span className="font-medium text-gray-600">Số điện thoại:</span>
-                  <p className="text-gray-900 mt-1">{selectedItem.phoneNumber}</p>
+                  <span className="font-medium text-gray-600">
+                    Số điện thoại:
+                  </span>
+                  <p className="text-gray-900 mt-1">
+                    {selectedItem.phoneNumber}
+                  </p>
                 </div>
                 <div>
-                  <span className="font-medium text-gray-600 w-full">Vai trò: </span>
+                  <span className="font-medium text-gray-600 w-full">
+                    Vai trò:{" "}
+                  </span>
                   <Badge
                     className={
-                      selectedItem.role?.name?.toLowerCase() === "admin" ||
-                        selectedItem.role?.name?.toLowerCase() === "quản trị viên"
+                      selectedItem.role?.roleCode === "ROLE_ADMIN"
                         ? "bg-purple-100 text-purple-800"
                         : "bg-blue-100 text-blue-800"
                     }
                   >
-                    {selectedItem.role?.name?.toLowerCase() === "admin" ||
-                      selectedItem.role?.name?.toLowerCase() === "quản trị viên"
-                      ? "Quản trị viên"
-                      : "Nhân viên"}
+                    {selectedItem.role?.name || "N/A"}
                   </Badge>
                 </div>
                 <div className="col-span-2">
@@ -778,38 +947,18 @@ function AdminsTab({
                   <p className="text-gray-900 mt-1">{selectedItem.address}</p>
                 </div>
               </div>
-              <div className="border-t pt-4">
-                <h4 className="font-semibold text-gray-900 mb-2">Phân quyền:</h4>
-                <div className="space-y-2 text-sm">
-                  {Number(selectedItem.role?.id) === 1 ? (
-                    <>
-                      <p className="text-gray-600">✓ Toàn quyền quản lý hệ thống</p>
-                      <p className="text-gray-600">✓ Quản lý nhân viên</p>
-                      <p className="text-gray-600">✓ Xem và chỉnh sửa tất cả dữ liệu</p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-gray-600">✓ Xem tất cả dữ liệu</p>
-                      <p className="text-gray-600">✓ Quản lý đơn hàng</p>
-                      <p className="text-gray-600">✓ Xem thông tin khách hàng</p>
-                      <p className="text-gray-400">✗ Không thể quản lý nhân viên</p>
-                    </>
-                  )}
-                </div>
-              </div>
             </div>
           )}
         </DialogContent>
       </Dialog>
 
-      {/* Add/Edit Admin Modal */}
       <Dialog
         open={isAddModalOpen || isEditModalOpen}
         onOpenChange={(open) => {
           if (!open) {
-            setIsAddModalOpen(false)
-            setIsEditModalOpen(false)
-            setSelectedItem(null)
+            setIsAddModalOpen(false);
+            setIsEditModalOpen(false);
+            setSelectedItem(null);
           }
         }}
       >
@@ -862,18 +1011,21 @@ function AdminsTab({
                   <Select
                     defaultValue={selectedItem?.role?.id?.toString() || ""}
                     onValueChange={(v) =>
-                      setSelectedItem({ ...selectedItem, role: { id: Number(v) } })
+                      setSelectedItem({
+                        ...selectedItem,
+                        role: { id: Number(v) },
+                      })
                     }
                   >
                     <SelectTrigger className="border-gray-200 w-full">
-                      <SelectValue placeholder="Chọn vai trò" /> {/* 👈 Hiển thị khi chưa chọn */}
+                      <SelectValue placeholder="Chọn vai trò" />
                     </SelectTrigger>
                     <SelectContent>
                       {roles.map((role) => (
                         <SelectItem
                           key={role.id}
                           value={role.id.toString()}
-                          disabled={role.id === 1} // ✅ disable nếu id = 1
+                          disabled={role.id === 1}
                         >
                           {role.name}
                         </SelectItem>
@@ -894,7 +1046,12 @@ function AdminsTab({
               {isAddModalOpen && (
                 <div>
                   <Label htmlFor="password">Mật khẩu</Label>
-                  <Input id="password" type="password" placeholder="Nhập mật khẩu" className="border-gray-200" />
+                  <Input
+                    id="password"
+                    type="password"
+                    placeholder="Nhập mật khẩu"
+                    className="border-gray-200"
+                  />
                 </div>
               )}
             </div>
@@ -909,8 +1066,8 @@ function AdminsTab({
           </form>
         </DialogContent>
       </Dialog>
-    </div >
-  )
+    </div>
+  );
 }
 
 function CategoriesTab({
@@ -923,80 +1080,78 @@ function CategoriesTab({
   searchQuery,
   setSearchQuery,
 }: any) {
-  const [categories, setCategories] = useState<any[]>([])
-  const [currentPage, setCurrentPage] = useState(1)
-  const [rowsPerPage, setRowsPerPage] = useState(10)
+  const [categories, setCategories] = useState<any[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
 
-  // 🔹 Hàm lấy dữ liệu thương hiệu từ API
   const fetchCategories = async () => {
-    if (!token) return
+    const currentToken = localStorage.getItem("token");
+    if (!currentToken) return;
     try {
       const response = await axios.get("http://localhost:8080/api/categories", {
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${currentToken}`,
           "Content-Type": "application/json",
           Accept: "application/json",
         },
-      })
-
-      const data = response.data.result || []
-
-      const sortedCategories = data.sort((a: any, b: any) => b.id - a.id)
-
-      setCategories(sortedCategories)
+      });
+      const data = response.data.result || [];
+      setCategories(data.sort((a: any, b: any) => b.id - a.id));
     } catch (err) {
-      console.error("Error fetching brands:", err)
+      console.error("Error fetching categories:", err);
     }
-  }
+  };
 
   useEffect(() => {
-    fetchCategories()
-  }, [token])
+    fetchCategories();
+  }, []);
 
   const filteredCategories = categories.filter((category) =>
     category.name.toLowerCase().includes(searchQuery.toLowerCase()),
-  )
+  );
+  const totalPages = Math.ceil(filteredCategories.length / rowsPerPage);
+  const startIndex = (currentPage - 1) * rowsPerPage;
+  const paginatedCategories = filteredCategories.slice(
+    startIndex,
+    startIndex + rowsPerPage,
+  );
 
-  const totalPages = Math.ceil(filteredCategories.length / rowsPerPage)
-  const startIndex = (currentPage - 1) * rowsPerPage
-  const paginatedCategories = filteredCategories.slice(startIndex, startIndex + rowsPerPage)
-
-  // 🔹 Hàm thêm / cập nhật
   const handleSave = async (name: string) => {
+    const currentToken = localStorage.getItem("token");
     try {
       if (isAddModalOpen) {
         await axios.post(
           "http://localhost:8080/api/categories",
           { name },
-          { headers: { Authorization: `Bearer ${token}` } }
-        )
+          { headers: { Authorization: `Bearer ${currentToken}` } },
+        );
       } else if (isEditModalOpen && selectedItem) {
         await axios.patch(
           `http://localhost:8080/api/categories/${selectedItem.id}`,
           { name },
-          { headers: { Authorization: `Bearer ${token}` } }
-        )
+          { headers: { Authorization: `Bearer ${currentToken}` } },
+        );
       }
-      await fetchCategories()
-      setIsAddModalOpen(false)
-      setIsEditModalOpen(false)
-      setSelectedItem(null)
+      await fetchCategories();
+      setIsAddModalOpen(false);
+      setIsEditModalOpen(false);
+      setSelectedItem(null);
     } catch (err) {
-      console.error("Error saving category:", err)
+      console.error("Error saving category:", err);
     }
-  }
+  };
 
-  // 🔹 Hàm xóa danh mục
   const handleDelete = async (id: number) => {
+    const currentToken = localStorage.getItem("token");
     try {
       await axios.delete(`http://localhost:8080/api/categories/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      setCategories(categories.filter((cat) => cat.id !== id))
+        headers: { Authorization: `Bearer ${currentToken}` },
+      });
+      setCategories(categories.filter((cat) => cat.id !== id));
     } catch (err) {
-      console.error("Error deleting category:", err)
+      console.error("Error deleting category:", err);
     }
-  }
+  };
 
   return (
     <div className="space-y-4">
@@ -1012,14 +1167,13 @@ function CategoriesTab({
         </div>
         <Button
           onClick={() => setIsAddModalOpen(true)}
-          className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white"
+          className="bg-gradient-to-r from-orange-500 to-red-500 text-white"
         >
-          <Plus className="h-4 w-4 mr-2" />
-          Thêm danh mục
+          <Plus className="h-4 w-4 mr-2" /> Thêm danh mục
         </Button>
       </div>
 
-      <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
+      <Card className="shadow-lg border-0 bg-white/80">
         <CardContent className="pt-6">
           <Table>
             <TableHeader>
@@ -1041,20 +1195,18 @@ function CategoriesTab({
                           variant="ghost"
                           size="sm"
                           onClick={() => {
-                            setSelectedItem(cat)
-                            setIsEditModalOpen(true)
+                            setSelectedItem(cat);
+                            setIsEditModalOpen(true);
                           }}
-                          className="hover:bg-orange-50 text-orange-600"
+                          className="text-orange-600"
                         >
                           <Edit className="h-4 w-4" />
                         </Button>
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="hover:bg-red-50 text-red-600"
-                          onClick={() =>
-                            handleDelete(cat.id)
-                          }
+                          className="text-red-600"
+                          onClick={() => handleDelete(cat.id)}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -1064,10 +1216,7 @@ function CategoriesTab({
                 ))
               ) : (
                 <TableRow>
-                  <TableCell
-                    colSpan={2}
-                    className="text-center text-gray-500"
-                  >
+                  <TableCell colSpan={2} className="text-center text-gray-500">
                     Không có danh mục
                   </TableCell>
                 </TableRow>
@@ -1085,14 +1234,13 @@ function CategoriesTab({
         </CardContent>
       </Card>
 
-      {/* Add/Edit Category Modal with Brand Selection */}
       <Dialog
         open={isAddModalOpen || isEditModalOpen}
         onOpenChange={(open) => {
           if (!open) {
-            setIsAddModalOpen(false)
-            setIsEditModalOpen(false)
-            setSelectedItem(null)
+            setIsAddModalOpen(false);
+            setIsEditModalOpen(false);
+            setSelectedItem(null);
           }
         }}
       >
@@ -1103,18 +1251,16 @@ function CategoriesTab({
                 <Plus className="h-5 w-5 text-green-500" />
               ) : (
                 <Edit className="h-5 w-5 text-orange-500" />
-              )}
+              )}{" "}
               {isAddModalOpen ? "Thêm danh mục mới" : "Chỉnh sửa danh mục"}
             </DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div>
-              <Label htmlFor="category-name">Tên danh mục</Label>
+              <Label>Tên danh mục</Label>
               <Input
-                id="category-name"
                 placeholder="Nhập tên danh mục"
                 defaultValue={selectedItem?.name || ""}
-                className="border-gray-200"
                 onChange={(e) =>
                   setSelectedItem((prev: any) => ({
                     ...prev,
@@ -1126,11 +1272,8 @@ function CategoriesTab({
           </div>
           <DialogFooter>
             <Button
-              type="submit"
-              className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white"
-              onClick={() =>
-                handleSave(selectedItem?.name || "")
-              }
+              className="bg-gradient-to-r from-orange-500 to-red-500"
+              onClick={() => handleSave(selectedItem?.name || "")}
             >
               {isAddModalOpen ? "Thêm danh mục" : "Cập nhật"}
             </Button>
@@ -1138,7 +1281,7 @@ function CategoriesTab({
         </DialogContent>
       </Dialog>
     </div>
-  )
+  );
 }
 
 function BrandsTab({
@@ -1151,116 +1294,72 @@ function BrandsTab({
   searchQuery,
   setSearchQuery,
 }: any) {
-
-  const [brands, setBrands] = useState<any[]>([])
-  const [currentPage, setCurrentPage] = useState(1)
-  const [rowsPerPage, setRowsPerPage] = useState(10)
-  const [totalPages, setTotalPages] = useState(1)
-  const [totalItems, setTotalItems] = useState(0)
-
-  const token =
-    typeof window !== "undefined" ? localStorage.getItem("token") : null
-
+  const [brands, setBrands] = useState<any[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
 
   const fetchBrands = async () => {
-    if (!token) return
+    const currentToken = localStorage.getItem("token");
+    if (!currentToken) return;
     try {
-      const params: any = {
-        page: currentPage,
-        size: rowsPerPage
-      }
+      const params: any = { page: currentPage, size: rowsPerPage };
+      if (searchQuery) params.searchKey = searchQuery;
+      const response = await axios.get("http://localhost:8080/api/brands", {
+        params,
+        headers: { Authorization: `Bearer ${currentToken}` },
+      });
 
-      if (searchQuery) {
-        params.searchKey = searchQuery
-      }
+      const data = response.data.result || [];
+      setBrands(data.sort((a: any, b: any) => b.id - a.id));
 
-      const response = await axios.get(
-        "http://localhost:8080/api/brands",
-        {
-          params,
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      )
-
-      const data = response.data
-
-      setBrands(data.result || [])
-      setTotalPages(data.meta?.totalPages || 1)
-      setTotalItems(data.meta?.totalElements || 0)
-
+      setTotalPages(response.data.meta?.totalPages || 1);
+      setTotalItems(response.data.meta?.totalElements || 0);
     } catch (error) {
-      console.error("Error fetching brands:", error)
+      console.error("Error fetching brands:", error);
     }
-  }
-
+  };
 
   useEffect(() => {
-    if (token) {
-      fetchBrands()
-    }
-  }, [searchQuery, currentPage, rowsPerPage, token])
+    fetchBrands();
+  }, [searchQuery, currentPage, rowsPerPage]);
 
-
-  // thêm / update
   const handleSave = async (name: string) => {
+    const currentToken = localStorage.getItem("token");
     try {
-      if (isAddModalOpen) {
+      if (isAddModalOpen)
         await axios.post(
           "http://localhost:8080/api/brands",
           { name },
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        )
-      }
-
-      if (isEditModalOpen && selectedItem) {
+          { headers: { Authorization: `Bearer ${currentToken}` } },
+        );
+      if (isEditModalOpen && selectedItem)
         await axios.put(
           `http://localhost:8080/api/brands/${selectedItem.id}`,
           { name },
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        )
-
-      }
-
-      fetchBrands()
-      setIsAddModalOpen(false)
-      setIsEditModalOpen(false)
-      setSelectedItem(null)
+          { headers: { Authorization: `Bearer ${currentToken}` } },
+        );
+      fetchBrands();
+      setIsAddModalOpen(false);
+      setIsEditModalOpen(false);
+      setSelectedItem(null);
     } catch (error) {
-      console.error("Error saving brand:", error)
+      console.error("Error saving brand:", error);
     }
-  }
+  };
 
-
-  // delete
   const handleDelete = async (id: number) => {
+    const currentToken = localStorage.getItem("token");
     try {
-
-      await axios.delete(
-        `http://localhost:8080/api/brands/${id}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      )
-
-      fetchBrands()
+      await axios.delete(`http://localhost:8080/api/brands/${id}`, {
+        headers: { Authorization: `Bearer ${currentToken}` },
+      });
+      fetchBrands();
     } catch (error) {
-      console.error("Error deleting brand:", error)
+      console.error("Error deleting brand:", error);
     }
-
-  }
-
+  };
 
   return (
     <div className="space-y-4">
@@ -1272,21 +1371,18 @@ function BrandsTab({
             className="pl-8 border-gray-200"
             value={searchQuery}
             onChange={(e) => {
-              setSearchQuery(e.target.value)
-              setCurrentPage(1)
+              setSearchQuery(e.target.value);
+              setCurrentPage(1);
             }}
           />
         </div>
-
         <Button
           onClick={() => setIsAddModalOpen(true)}
           className="bg-gradient-to-r from-orange-500 to-red-500 text-white"
         >
-          <Plus className="h-4 w-4 mr-2" />
-          Thêm thương hiệu
+          <Plus className="h-4 w-4 mr-2" /> Thêm thương hiệu
         </Button>
       </div>
-
 
       <Card className="shadow-lg border-0 bg-white/80">
         <CardContent className="pt-6">
@@ -1298,7 +1394,6 @@ function BrandsTab({
               </TableRow>
             </TableHeader>
             <TableBody>
-
               {brands.length > 0 ? (
                 brands.map((brand) => (
                   <TableRow key={brand.id}>
@@ -1307,13 +1402,12 @@ function BrandsTab({
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-2">
-
                         <Button
                           variant="ghost"
                           size="sm"
                           onClick={() => {
-                            setSelectedItem(brand)
-                            setIsEditModalOpen(true)
+                            setSelectedItem(brand);
+                            setIsEditModalOpen(true);
                           }}
                           className="text-orange-600"
                         >
@@ -1322,12 +1416,11 @@ function BrandsTab({
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => handleDelete(brand.id)}
                           className="text-red-600"
+                          onClick={() => handleDelete(brand.id)}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
-
                       </div>
                     </TableCell>
                   </TableRow>
@@ -1339,7 +1432,6 @@ function BrandsTab({
                   </TableCell>
                 </TableRow>
               )}
-
             </TableBody>
           </Table>
           <Pagination
@@ -1347,27 +1439,23 @@ function BrandsTab({
             totalPages={totalPages}
             onPageChange={setCurrentPage}
             rowsPerPage={rowsPerPage}
-            onRowsPerPageChange={(size) => {
-              setRowsPerPage(size)
-              setCurrentPage(1)
+            onRowsPerPageChange={(size: any) => {
+              setRowsPerPage(size);
+              setCurrentPage(1);
             }}
             totalItems={totalItems}
           />
         </CardContent>
       </Card>
 
-
-      {/* Modal Add / Edit */}
       <Dialog
         open={isAddModalOpen || isEditModalOpen}
         onOpenChange={(open) => {
-
           if (!open) {
-            setIsAddModalOpen(false)
-            setIsEditModalOpen(false)
-            setSelectedItem(null)
+            setIsAddModalOpen(false);
+            setIsEditModalOpen(false);
+            setSelectedItem(null);
           }
-
         }}
       >
         <DialogContent>
@@ -1378,7 +1466,6 @@ function BrandsTab({
                 : "Chỉnh sửa thương hiệu"}
             </DialogTitle>
           </DialogHeader>
-
           <div className="grid gap-4 py-4">
             <div>
               <Label>Tên thương hiệu</Label>
@@ -1394,9 +1481,7 @@ function BrandsTab({
               />
             </div>
           </div>
-
           <DialogFooter>
-
             <Button
               className="bg-gradient-to-r from-orange-500 to-red-500"
               onClick={() => handleSave(selectedItem?.name || "")}
@@ -1407,10 +1492,8 @@ function BrandsTab({
         </DialogContent>
       </Dialog>
     </div>
-  )
+  );
 }
-
-// ... existing code for ConfigurationsTab with search functionality added ...
 
 function ConfigurationsTab({
   selectedItem,
@@ -1423,168 +1506,165 @@ function ConfigurationsTab({
   setIsAddModalOpen,
   searchQuery,
   setSearchQuery,
+  activeTab,
 }: any) {
-  const [configurations, setConfigurations] = useState<any[]>([])
-  const [currentPage, setCurrentPage] = useState(1)
-  const [newSpecs, setNewSpecs] = useState<{ id?: number; name: string; value: string }[]>([])
-  const [rowsPerPage, setRowsPerPage] = useState(10)
+  const [configurations, setConfigurations] = useState<any[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [newSpecs, setNewSpecs] = useState<
+    { id?: number; name: string; value: string }[]
+  >([]);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
 
-  // 🔹 Hàm fetch dữ liệu cấu hình
   const fetchConfigurations = async () => {
-    if (!token) return
-
+    const currentToken = localStorage.getItem("token");
+    if (!currentToken) return;
     try {
       const response = await axios.get(
         "http://localhost:8080/api/configurations",
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      )
-
-      const data = response.data.result || []
-
-      const sortedConfigs = data.sort((a: any, b: any) => b.id - a.id)
-
-      setConfigurations(sortedConfigs)
+        { headers: { Authorization: `Bearer ${currentToken}` } },
+      );
+      const data = response.data.result || [];
+      setConfigurations(data.sort((a: any, b: any) => b.id - a.id));
     } catch (err) {
-      console.error("Error fetching configurations:", err)
+      console.error("Error fetching configurations:", err);
     }
-  }
+  };
 
-  // 🔹 Fetch thông số kỹ thuật theo cấu hình ID
   const fetchSpecifications = async (configId: number) => {
-    if (!token) return
+    const currentToken = localStorage.getItem("token");
+    if (!currentToken) return;
     try {
       const response = await axios.get(
         `http://localhost:8080/api/specifications/configuration/${configId}?includeDeleted=false`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      )
-
-      const specs = response.data.result || []
-
+        { headers: { Authorization: `Bearer ${currentToken}` } },
+      );
+      const specs = response.data.result || [];
       setNewSpecs(
-        specs.map((s: any) => ({
-          id: s.id,
-          name: s.name,
-          value: s.value,
-        }))
-      )
+        specs.map((s: any) => ({ id: s.id, name: s.name, value: s.value })),
+      );
     } catch (err) {
-      console.error("Error fetching specs:", err)
-      setNewSpecs([])
+      console.error("Error fetching specs:", err);
+      setNewSpecs([]);
     }
-  }
+  };
 
   useEffect(() => {
-    fetchConfigurations()
-  }, [token])
+    if (activeTab === "configurations") fetchConfigurations();
+  }, [activeTab]);
 
+  const filteredConfigs = configurations.filter((config) =>
+    config.name?.toLowerCase().includes(searchQuery.toLowerCase()),
+  );
+  const totalPages = Math.ceil(filteredConfigs.length / rowsPerPage);
+  const startIndex = (currentPage - 1) * rowsPerPage;
+  const paginatedConfigs = filteredConfigs.slice(
+    startIndex,
+    startIndex + rowsPerPage,
+  );
 
-
-  // ✅ Tìm kiếm
-  const filteredConfigs = configurations.filter(
-    (config) =>
-      config.name?.toLowerCase().includes(searchQuery.toLowerCase())
-  )
-
-  const totalPages = Math.ceil(filteredConfigs.length / rowsPerPage)
-  const startIndex = (currentPage - 1) * rowsPerPage
-  const paginatedConfigs = filteredConfigs.slice(startIndex, startIndex + rowsPerPage)
-
-  // 🔹 Khi click “Edit”
   const handleEditClick = async (config: any) => {
-    setSelectedItem(config)
-    setIsEditModalOpen(true)
-    await fetchSpecifications(config.id)
-  }
+    setSelectedItem(config);
+    setIsEditModalOpen(true);
+    await fetchSpecifications(config.id);
+  };
 
-  // 🔹 Lưu cấu hình mới
   const handleSaveAddConfiguration = async () => {
-    if (!token) return
+    const currentToken = localStorage.getItem("token");
+    if (!currentToken) return;
     try {
-      // 1️⃣ Thêm cấu hình
       const res = await axios.post(
         "http://localhost:8080/api/configurations",
         { name: selectedItem?.name || "Cấu hình mới" },
-        { headers: { Authorization: `Bearer ${token}` } }
-      )
-
-      const configId = res.data?.result?.id || res.data?.id
-      if (!configId) throw new Error("Không lấy được ID cấu hình mới")
-
-      // 2️⃣ Thêm thông số kỹ thuật
+        { headers: { Authorization: `Bearer ${currentToken}` } },
+      );
+      const configId = res.data?.result?.id || res.data?.id;
+      if (!configId) throw new Error("Không lấy được ID cấu hình mới");
       await Promise.all(
         newSpecs.map((spec) =>
           axios.post(
             "http://localhost:8080/api/specifications",
             { name: spec.name, value: spec.value, configurationId: configId },
-            { headers: { Authorization: `Bearer ${token}` } }
-          )
-        )
-      )
-
-      await fetchConfigurations()
-      setIsAddModalOpen(false)
-      setNewSpecs([])
+            { headers: { Authorization: `Bearer ${currentToken}` } },
+          ),
+        ),
+      );
+      await fetchConfigurations();
+      setIsAddModalOpen(false);
+      setNewSpecs([]);
     } catch (err) {
-      console.error("Error adding configuration:", err)
+      console.error("Error adding configuration:", err);
     }
-  }
+  };
 
-  // 🔹 Cập nhật cấu hình
   const handleSaveEditConfiguration = async () => {
-    if (!token || !selectedItem) return
+    const currentToken = localStorage.getItem("token");
+    if (!currentToken || !selectedItem) return;
     try {
-      // 1️⃣ Cập nhật cấu hình
       await axios.put(
         `http://localhost:8080/api/configurations/${selectedItem.id}`,
         { name: selectedItem.name },
-        { headers: { Authorization: `Bearer ${token}` } }
-      )
-
-      // 2️⃣ Cập nhật hoặc thêm thông số kỹ thuật
+        { headers: { Authorization: `Bearer ${currentToken}` } },
+      );
       await Promise.all(
         newSpecs.map(async (spec) => {
           if (spec.id) {
-            // PUT cập nhật
             return axios.put(
               `http://localhost:8080/api/specifications/${spec.id}`,
               { name: spec.name, value: spec.value },
-              { headers: { Authorization: `Bearer ${token}` } }
-            )
+              { headers: { Authorization: `Bearer ${currentToken}` } },
+            );
           } else {
-            // POST mới
             return axios.post(
               "http://localhost:8080/api/specifications",
-              { name: spec.name, value: spec.value, configurationId: selectedItem.id },
-              { headers: { Authorization: `Bearer ${token}` } }
-            )
+              {
+                name: spec.name,
+                value: spec.value,
+                configurationId: selectedItem.id,
+              },
+              { headers: { Authorization: `Bearer ${currentToken}` } },
+            );
           }
-        })
-      )
-
-      await fetchConfigurations()
-      setIsEditModalOpen(false)
-      setSelectedItem(null)
-      setNewSpecs([])
+        }),
+      );
+      await fetchConfigurations();
+      setIsEditModalOpen(false);
+      setSelectedItem(null);
+      setNewSpecs([]);
     } catch (err) {
-      console.error("Error updating configuration:", err)
+      console.error("Error updating configuration:", err);
     }
-  }
+  };
 
-  const handleAddSpec = () => {
-    setNewSpecs([...newSpecs, { name: "", value: "" }])
-  }
+  const handleDelete = async (id: number) => {
+    if (!window.confirm("Bạn có chắc chắn muốn xóa cấu hình này?")) return;
+    const currentToken = localStorage.getItem("token");
+    if (!currentToken) return;
 
-  const handleRemoveSpec = (index: number) => {
-    setNewSpecs(newSpecs.filter((_, i) => i !== index))
-  }
+    try {
+      await axios.delete(`http://localhost:8080/api/configurations/${id}`, {
+        headers: { Authorization: `Bearer ${currentToken}` },
+      });
+      toast.success("Xóa cấu hình thành công!");
+      fetchConfigurations();
+    } catch (err) {
+      console.error("Error deleting configuration:", err);
+      toast.error("Xóa cấu hình thất bại!");
+    }
+  };
 
-  const handleUpdateSpec = (index: number, field: "name" | "value", value: string) => {
-    const updated = [...newSpecs]
-    updated[index][field] = value
-    setNewSpecs(updated)
-  }
+  const handleAddSpec = () =>
+    setNewSpecs([...newSpecs, { name: "", value: "" }]);
+  const handleRemoveSpec = (index: number) =>
+    setNewSpecs(newSpecs.filter((_, i) => i !== index));
+  const handleUpdateSpec = (
+    index: number,
+    field: "name" | "value",
+    value: string,
+  ) => {
+    const updated = [...newSpecs];
+    updated[index][field] = value;
+    setNewSpecs(updated);
+  };
 
   return (
     <div className="space-y-6">
@@ -1600,13 +1680,12 @@ function ConfigurationsTab({
         </div>
         <Button
           onClick={() => {
-            setIsAddModalOpen(true)
-            setNewSpecs([])
+            setIsAddModalOpen(true);
+            setNewSpecs([]);
           }}
-          className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white"
+          className="bg-gradient-to-r from-orange-500 to-red-500 text-white"
         >
-          <Plus className="h-4 w-4 mr-2" />
-          Thêm cấu hình
+          <Plus className="h-4 w-4 mr-2" /> Thêm cấu hình
         </Button>
       </div>
 
@@ -1615,27 +1694,25 @@ function ConfigurationsTab({
           <Table>
             <TableHeader>
               <TableRow className="border-b border-gray-200">
-                <TableHead className="font-semibold text-gray-900">Tên cấu hình</TableHead>
-                <TableHead className="font-semibold text-gray-900 text-right">Thao tác</TableHead>
+                <TableHead className="font-semibold text-gray-900">
+                  Tên cấu hình
+                </TableHead>
+                <TableHead className="font-semibold text-gray-900 text-right">
+                  Thao tác
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {paginatedConfigs.map((config) => (
-                <TableRow key={config.id} className="border-b border-gray-100 hover:bg-gray-50">
-                  <TableCell className="font-medium text-gray-900 py-4">{config.name}</TableCell>
+                <TableRow
+                  key={config.id}
+                  className="border-b border-gray-100 hover:bg-gray-50"
+                >
+                  <TableCell className="font-medium text-gray-900 py-4">
+                    {config.name}
+                  </TableCell>
                   <TableCell className="text-right py-4">
                     <div className="flex justify-end gap-2">
-                      {/* <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() => {
-                                                    setSelectedItem(config)
-                                                    setIsViewModalOpen(true)
-                                                }}
-                                                className="hover:bg-blue-50"
-                                            >
-                                                <Eye className="h-4 w-4 text-blue-500" />
-                                            </Button> */}
                       <Button
                         variant="ghost"
                         size="sm"
@@ -1644,7 +1721,12 @@ function ConfigurationsTab({
                       >
                         <Edit className="h-4 w-4 text-orange-500" />
                       </Button>
-                      <Button variant="ghost" size="sm" className="hover:bg-red-50">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="hover:bg-red-50"
+                        onClick={() => handleDelete(config.id)}
+                      >
                         <Trash2 className="h-4 w-4 text-red-500" />
                       </Button>
                     </div>
@@ -1655,7 +1737,6 @@ function ConfigurationsTab({
           </Table>
         </CardContent>
       </Card>
-
       <Pagination
         currentPage={currentPage}
         totalPages={totalPages}
@@ -1665,70 +1746,14 @@ function ConfigurationsTab({
         totalItems={filteredConfigs.length}
       />
 
-      {/* <Dialog open={isViewModalOpen} onOpenChange={setIsViewModalOpen}>
-                <DialogContent className="max-w-[95vw] max-h-[95vh] overflow-y-auto">
-                    <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2">
-                            <Wrench className="h-5 w-5 text-blue-500" />
-                            Chi tiết cấu hình
-                        </DialogTitle>
-                    </DialogHeader>
-                    {selectedItem && (
-                        <div className="space-y-6">
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <span className="font-medium text-gray-600">Tên cấu hình:</span>
-                                    <p className="text-gray-900 font-semibold">{selectedItem.name}</p>
-                                </div>
-                                <div>
-                                    <span className="font-medium text-gray-600">Sản phẩm:</span>
-                                    <p className="text-gray-900">{selectedItem.product_name}</p>
-                                </div>
-                                <div>
-                                    <span className="font-medium text-gray-600">Giá:</span>
-                                    <p className="text-orange-600 font-bold">₫{selectedItem.price?.toLocaleString()}</p>
-                                </div>
-                                <div>
-                                    <span className="font-medium text-gray-600">Config ID:</span>
-                                    <p className="text-gray-900">#{selectedItem.id}</p>
-                                </div>
-                            </div>
-
-                            <div className="border-t pt-4">
-                                <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                                    <Settings className="h-4 w-4 text-orange-500" />
-                                    Thông số kỹ thuật
-                                </h4>
-                                {(() => {
-                                    const specs = mockData.specifications.filter((s) => s.config_id === selectedItem.id)
-                                    if (specs.length === 0) {
-                                        return <p className="text-sm text-gray-500">Chưa có thông số kỹ thuật nào.</p>
-                                    }
-                                    return (
-                                        <div className="grid grid-cols-2 gap-3">
-                                            {specs.map((spec) => (
-                                                <div key={spec.id} className="bg-gray-50 p-3 rounded-lg border border-gray-200">
-                                                    <span className="text-sm font-medium text-gray-600">{spec.name}:</span>
-                                                    <p className="text-sm text-gray-900 mt-1 font-medium">{spec.value}</p>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )
-                                })()}
-                            </div>
-                        </div>
-                    )}
-                </DialogContent>
-            </Dialog> */}
-
       <Dialog
         open={isAddModalOpen || isEditModalOpen}
         onOpenChange={(open) => {
           if (!open) {
-            setIsAddModalOpen(false)
-            setIsEditModalOpen(false)
-            setSelectedItem(null)
-            setNewSpecs([])
+            setIsAddModalOpen(false);
+            setIsEditModalOpen(false);
+            setSelectedItem(null);
+            setNewSpecs([]);
           }
         }}
       >
@@ -1739,11 +1764,13 @@ function ConfigurationsTab({
                 <Plus className="h-5 w-5 text-green-500" />
               ) : (
                 <Edit className="h-5 w-5 text-orange-500" />
-              )}
+              )}{" "}
               {isAddModalOpen ? "Thêm cấu hình mới" : "Chỉnh sửa cấu hình"}
             </DialogTitle>
             <DialogDescription>
-              {isAddModalOpen ? "Nhập thông tin chi tiết cho cấu hình mới" : "Cập nhật thông tin cấu hình"}
+              {isAddModalOpen
+                ? "Nhập thông tin chi tiết cho cấu hình mới"
+                : "Cập nhật thông tin cấu hình"}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
@@ -1755,42 +1782,12 @@ function ConfigurationsTab({
                   placeholder="Nhập tên cấu hình"
                   value={selectedItem?.name || ""}
                   onChange={(e) =>
-                    setSelectedItem({
-                      ...selectedItem,
-                      name: e.target.value,
-                    })
+                    setSelectedItem({ ...selectedItem, name: e.target.value })
                   }
                   className="border-gray-200"
                 />
               </div>
-              {/* <div>
-                                <Label htmlFor="product">Sản phẩm</Label>
-                                <Select defaultValue={selectedItem?.product_id?.toString() || ""}>
-                                    <SelectTrigger className="border-gray-200">
-                                        <SelectValue placeholder="Chọn sản phẩm" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {mockData.products.map((product) => (
-                                            <SelectItem key={product.id} value={product.id.toString()}>
-                                                {product.name}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div> */}
             </div>
-
-            {/* <div>
-                            <Label htmlFor="price">Giá</Label>
-                            <Input
-                                id="price"
-                                type="number"
-                                placeholder="0"
-                                defaultValue={selectedItem?.price || ""}
-                                className="border-gray-200"
-                            />
-                        </div> */}
-
             <div>
               <div className="flex items-center justify-between mb-2">
                 <Label>Thông số kỹ thuật</Label>
@@ -1801,8 +1798,7 @@ function ConfigurationsTab({
                   onClick={handleAddSpec}
                   className="border-orange-500 text-orange-600 hover:bg-orange-50 bg-transparent"
                 >
-                  <Plus className="h-4 w-4 mr-1" />
-                  Thêm thông số
+                  <Plus className="h-4 w-4 mr-1" /> Thêm thông số
                 </Button>
               </div>
               <div className="space-y-2 max-h-60 overflow-y-auto border border-gray-200 rounded-lg p-3">
@@ -1811,13 +1807,17 @@ function ConfigurationsTab({
                     <Input
                       placeholder="Tên thông số"
                       value={spec.name}
-                      onChange={(e) => handleUpdateSpec(idx, "name", e.target.value)}
+                      onChange={(e) =>
+                        handleUpdateSpec(idx, "name", e.target.value)
+                      }
                       className="flex-1 border-gray-200"
                     />
                     <Input
                       placeholder="Giá trị"
                       value={spec.value}
-                      onChange={(e) => handleUpdateSpec(idx, "value", e.target.value)}
+                      onChange={(e) =>
+                        handleUpdateSpec(idx, "value", e.target.value)
+                      }
                       className="flex-1 border-gray-200"
                     />
                     <Button
@@ -1842,8 +1842,12 @@ function ConfigurationsTab({
           <DialogFooter>
             <Button
               type="submit"
-              onClick={isAddModalOpen ? handleSaveAddConfiguration : handleSaveEditConfiguration}
-              className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white"
+              onClick={
+                isAddModalOpen
+                  ? handleSaveAddConfiguration
+                  : handleSaveEditConfiguration
+              }
+              className="bg-gradient-to-r from-orange-500 to-red-500 text-white"
             >
               {isAddModalOpen ? "Thêm cấu hình" : "Cập nhật cấu hình"}
             </Button>
@@ -1851,7 +1855,7 @@ function ConfigurationsTab({
         </DialogContent>
       </Dialog>
     </div>
-  )
+  );
 }
 
 function SettingsTab({
@@ -1864,8 +1868,9 @@ function SettingsTab({
   isAddModalOpen,
   setIsAddModalOpen,
 }: any) {
-  const [activeInventoryTab, setActiveInventoryTab] = useState("configurations")
-  const [searchQuery, setSearchQuery] = useState("")
+  const [activeInventoryTab, setActiveInventoryTab] =
+    useState("configurations");
+  const [searchQuery, setSearchQuery] = useState("");
 
   return (
     <div className="space-y-6">
@@ -1890,6 +1895,7 @@ function SettingsTab({
             setIsAddModalOpen={setIsAddModalOpen}
             searchQuery={searchQuery}
             setSearchQuery={setSearchQuery}
+            activeTab={activeInventoryTab}
           />
         </TabsContent>
 
@@ -1920,54 +1926,61 @@ function SettingsTab({
         </TabsContent>
       </Tabs>
     </div>
-  )
+  );
 }
+
+// ==========================================
+// ĐÂY LÀ HÀM ANALYTICS CHUẨN (CÓ BIỂU ĐỒ RECHARTS VÀ TIẾNG VIỆT)
+// ==========================================
+
+// ==========================================
+// THÀNH PHẦN CHÍNH CỦA TRANG: ADMIN DASHBOARD
+// ==========================================
 
 export function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   const [activeTab, setActiveTab] = useState<string>(() => {
     if (typeof window !== "undefined") {
-      return localStorage.getItem("admin_active_tab") || "overview"
+      return localStorage.getItem("admin_active_tab") || "overview";
     }
-    return "overview"
-  })
-  const [selectedItem, setSelectedItem] = useState<any>(null)
-  const [isViewModalOpen, setIsViewModalOpen] = useState(false)
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false)
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
-  const [uploadedImages, setUploadedImages] = useState<string[]>([])
-  const [selectedConfigs, setSelectedConfigs] = useState<number[]>([])
-  const [isImportModalOpen, setIsImportModalOpen] = useState(false)
-  const [configQuantities, setConfigQuantities] = useState<Record<number, number>>({})
-  const [configPrices, setConfigPrices] = useState<Record<number, number>>({})
-
+    return "overview";
+  });
+  const [selectedItem, setSelectedItem] = useState<any>(null);
+  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [configQuantities, setConfigQuantities] = useState<
+    Record<number, number>
+  >({});
+  const [configPrices, setConfigPrices] = useState<Record<number, number>>({});
 
   const handleTabChange = (tabId: string) => {
-    setActiveTab(tabId)
-    localStorage.setItem("admin_active_tab", tabId)
-    setIsViewModalOpen(false)
-    setIsEditModalOpen(false)
-    setIsAddModalOpen(false)
-    setIsDeleteDialogOpen(false)
-    setIsImportModalOpen(false)
-    setSelectedItem(null)
-    setConfigQuantities({})
-    setConfigPrices({})
-  }
+    setActiveTab(tabId);
+    localStorage.setItem("admin_active_tab", tabId);
+    setIsViewModalOpen(false);
+    setIsEditModalOpen(false);
+    setIsAddModalOpen(false);
+    setIsDeleteDialogOpen(false);
+    setIsImportModalOpen(false);
+    setSelectedItem(null);
+    setConfigQuantities({});
+    setConfigPrices({});
+  };
 
   const handleConfigQuantityChange = (configId: number, quantity: number) => {
     setConfigQuantities((prev) => ({
       ...prev,
       [configId]: quantity,
-    }))
-  }
+    }));
+  };
 
   const handleConfigPriceChange = (configId: number, price: number) => {
     setConfigPrices((prev) => ({
       ...prev,
       [configId]: price,
-    }))
-  }
+    }));
+  };
 
   return (
     <div className="flex h-screen bg-gray-50">
@@ -1993,15 +2006,17 @@ export function AdminDashboard({ onLogout }: { onLogout: () => void }) {
             { id: "customers", label: "Khách hàng", icon: Users },
             { id: "admins", label: "Nhân viên", icon: UserCog },
             { id: "images", label: "Quản lý ảnh", icon: ImageIcon },
+            { id: "analytics", label: "Dự báo AI", icon: BarChart3 },
             { id: "settings", label: "Cài đặt", icon: Settings },
           ].map((item) => (
             <button
               key={item.id}
               onClick={() => handleTabChange(item.id)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${activeTab === item.id
-                ? "bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-md"
-                : "text-gray-600 hover:bg-gray-100"
-                }`}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
+                activeTab === item.id
+                  ? "bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-md"
+                  : "text-gray-600 hover:bg-gray-100"
+              }`}
             >
               <item.icon className="h-5 w-5" />
               <span className="font-medium">{item.label}</span>
@@ -2033,9 +2048,12 @@ export function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                 {activeTab === "customers" && "Quản lý khách hàng"}
                 {activeTab === "admins" && "Quản lý nhân viên"}
                 {activeTab === "images" && "Quản lý ảnh"}
+                {activeTab === "analytics" && "AI Smart Inventory"}
                 {activeTab === "settings" && "Cài đặt"}
               </h2>
-              <p className="text-sm text-gray-500 mt-1">Chào mừng trở lại, Admin</p>
+              <p className="text-sm text-gray-500 mt-1">
+                Chào mừng trở lại, Admin
+              </p>
             </div>
             <div className="flex items-center gap-3">
               <Button variant="outline" size="sm">
@@ -2050,9 +2068,6 @@ export function AdminDashboard({ onLogout }: { onLogout: () => void }) {
           {activeTab === "overview" && <OverviewTab />}
           {activeTab === "products" && (
             <ProductsTab
-              handleConfigQuantityChange={handleConfigQuantityChange}
-              setConfigQuantities={setConfigQuantities}
-              configPrices={configPrices}
               selectedItem={selectedItem}
               setSelectedItem={setSelectedItem}
               isViewModalOpen={isViewModalOpen}
@@ -2061,14 +2076,9 @@ export function AdminDashboard({ onLogout }: { onLogout: () => void }) {
               setIsEditModalOpen={setIsEditModalOpen}
               isAddModalOpen={isAddModalOpen}
               setIsAddModalOpen={setIsAddModalOpen}
-              uploadedImages={uploadedImages}
-              setUploadedImages={setUploadedImages}
-              selectedConfigs={selectedConfigs}
-              setSelectedConfigs={setSelectedConfigs}
-              configQuantities={configQuantities}
-              setConfigPrices={setConfigPrices}
               isImportModalOpen={isImportModalOpen}
               setIsImportModalOpen={setIsImportModalOpen}
+              handleConfigQuantityChange={handleConfigQuantityChange}
               handleConfigPriceChange={handleConfigPriceChange}
             />
           )}
@@ -2114,6 +2124,7 @@ export function AdminDashboard({ onLogout }: { onLogout: () => void }) {
               setIsEditModalOpen={setIsEditModalOpen}
             />
           )}
+          {activeTab === "analytics" && <AnalyticsTab />}
           {activeTab === "settings" && (
             <SettingsTab
               selectedItem={selectedItem}
@@ -2129,20 +2140,26 @@ export function AdminDashboard({ onLogout }: { onLogout: () => void }) {
         </main>
       </div>
 
-      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+      <AlertDialog
+        open={isDeleteDialogOpen}
+        onOpenChange={setIsDeleteDialogOpen}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Xác nhận xóa</AlertDialogTitle>
             <AlertDialogDescription>
-              Bạn có chắc chắn muốn xóa mục này? Hành động này không thể hoàn tác.
+              Bạn có chắc chắn muốn xóa mục này? Hành động này không thể hoàn
+              tác.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Hủy</AlertDialogCancel>
-            <AlertDialogAction className="bg-red-500 hover:bg-red-600">Xóa</AlertDialogAction>
+            <AlertDialogAction className="bg-red-500 hover:bg-red-600">
+              Xóa
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </div>
-  )
+  );
 }
